@@ -81,7 +81,7 @@ mod tests {
 		let mut ms = Multistream::new();
 		let h: Handler<Stream> = Handler::new("/cats".to_string(), Box::new(|_, _| Ok(())));
 		ms.add_handler(h);
-		let mut buf = Cursor::new(vec![]);
+		let mut buf = Default::default();
 		ms.ls_write(&mut buf).unwrap();
 		assert_eq!(buf.into_inner(), [1, 6, 47, 99, 97, 116, 115, 10]);
 	}
