@@ -1,0 +1,10 @@
+[package]
+name = "multistream-select"
+version = "0.1.0"
+authors = ["Parity Technologies <admin@parity.io>"]
+
+[dependencies]
+libp2p-transport = { path = "../libp2p-transport" }
+integer-encoding = "1.0"
+tokio-io = "0.1"
+error-chain = "0.11"
