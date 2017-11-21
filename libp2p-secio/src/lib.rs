@@ -93,7 +93,7 @@ impl<S> libp2p_swarm::ConnectionUpgrade<S> for SecioConnUpgrade
 	}
 
 	#[inline]
-	fn upgrade(self, incoming: S, _: ()) -> Self::Future {
+	fn upgrade(self, incoming: S, _: (), _: libp2p_swarm::ConnectionUpgradeTy) -> Self::Future {
 		let fut = SecioMiddleware::handshake(
 			incoming,
 			self.local_public_key.clone(),

@@ -31,4 +31,5 @@ pub extern crate multiaddr;
 
 pub mod transport;
 
-pub use self::transport::{ConnectionUpgrade, PlainText, Transport, UpgradedNode, OrUpgrade};
+pub use self::transport::{ConnectionUpgrade, ConnectionUpgradeTy, PlainText, Transport};
+pub use self::transport::{UpgradedNode, OrUpgrade};
