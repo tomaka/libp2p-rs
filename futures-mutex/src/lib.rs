@@ -5,32 +5,23 @@
 //!
 
 extern crate futures;
-extern crate crossbeam;
+//extern crate crossbeam;
+//extern crate parking_lot;
 
 use std::ops::{Deref, DerefMut};
 use std::mem;
 use std::sync::Arc;
-use std::sync::atomic::{Ordering, AtomicBool};
-use std::cell::UnsafeCell;
-use crossbeam::sync::MsQueue;
+use std::sync::{Mutex as RegularMutex, MutexGuard as RegularMutexGuard};
+//use crossbeam::sync::MsQueue;
 use futures::task::{current, Task};
 use futures::{Future, Poll, Async};
+//use parking_lot::{Mutex as RegularMutex, MutexGuard as RegularMutexGuard};
 
 #[derive(Debug)]
 struct Inner<T> {
-    wait_queue: MsQueue<Task>,
-    locked: AtomicBool,
-    data: UnsafeCell<T>
+    data: RegularMutex<T>,
+    wait_queue: RegularMutex<Vec<Task>>,
 }
-
-impl<T> Drop for Inner<T> {
-    fn drop(&mut self) {
-        assert!(!self.locked.load(Ordering::SeqCst))
-    }
-}
-
-unsafe impl<T: Send> Send for Inner<T> {}
-unsafe impl<T: Send> Sync for Inner<T> {}
 
 /// A Mutex designed for use inside Futures. Works like `BiLock<T>` from the `futures` crate, but
 /// with more than 2 handles.
@@ -43,16 +34,15 @@ unsafe impl<T: Send> Sync for Inner<T> {}
 /// *As of now, there is no strong guarantee that a particular handle of the lock won't be starved. Hopefully the use of the queue will prevent this, but I haven't tried to test that.*
 #[derive(Debug)]
 pub struct Mutex<T> {
-    inner: Arc<Inner<T>>
+    inner: Arc<Inner<T>>,
 }
 
 impl<T> Mutex<T> {
     /// Create a new Mutex wrapping around a value `t`
     pub fn new(t: T) -> Mutex<T> {
         let inner = Arc::new(Inner {
-            wait_queue: MsQueue::new(),
-            locked: AtomicBool::new(false),
-            data: UnsafeCell::new(t)
+            wait_queue: RegularMutex::new(Vec::new()),
+            data: RegularMutex::new(t),
         });
 
         Mutex {
@@ -73,11 +63,21 @@ impl<T> Mutex<T> {
     ///
     /// This function will panic if called outside the context of a future's task.
     pub fn poll_lock(&self) -> Async<MutexGuard<T>> {
-        if self.inner.locked.compare_and_swap(false, true, Ordering::SeqCst) {
-            self.inner.wait_queue.push(current());
-            Async::NotReady
-        } else {
-            Async::Ready(MutexGuard{ inner: self })
+        let mut ext_lock = self.inner.wait_queue.lock().unwrap();
+        println!("len = {:?}", ext_lock.len());
+        match self.inner.data.try_lock() {
+            Ok(guard) => {
+                println!("lock success");
+                Async::Ready(MutexGuard {
+                    inner: &self.inner,
+                    guard: guard,
+                })
+            },
+            Err(_) => {
+                ext_lock.push(current());
+                println!("adding one ; new_len = {}", ext_lock.len());
+                Async::NotReady
+            },
         }
     }
 
@@ -89,22 +89,6 @@ impl<T> Mutex<T> {
     pub fn lock(&self) -> MutexAcquire<T> {
         MutexAcquire {
             inner: self
-        }
-    }
-
-    /// We unlock the mutex and wait for someone to lock. We try and unpark as many tasks as we
-    /// can to prevents dead tasks from deadlocking the mutex, or tasks that have finished their
-    /// critical section and were awakened.
-    fn unlock(&self) {
-        if !self.inner.locked.swap(false, Ordering::SeqCst) {
-            panic!("Tried to unlock an already unlocked Mutex, something has gone terribly wrong");
-        }
-
-        while !self.inner.locked.load(Ordering::SeqCst) {
-            match self.inner.wait_queue.try_pop() {
-                Some(task) => task.notify(),
-                None => return
-            }
         }
     }
 }
@@ -122,27 +106,35 @@ impl<T> Clone for Mutex<T> {
 /// This structure acts as a sentinel to the data in the `Mutex<T>` itself,
 /// implementing `Deref` and `DerefMut` to `T`. When dropped, the lock will be
 /// unlocked.
-#[derive(Debug)]
+// TODO: implement Debug
 pub struct MutexGuard<'a, T: 'a> {
-    inner: &'a Mutex<T>
+    inner: &'a Inner<T>,
+    guard: RegularMutexGuard<'a, T>,
 }
 
 impl<'a, T> Deref for MutexGuard<'a, T> {
     type Target = T;
+    #[inline]
     fn deref(&self) -> &Self::Target {
-        unsafe { &*self.inner.inner.data.get() }
+        self.guard.deref()
     }
 }
 
 impl<'a, T> DerefMut for MutexGuard<'a, T> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.inner.inner.data.get() }
+        self.guard.deref_mut()
     }
 }
 
 impl<'a, T> Drop for MutexGuard<'a, T> {
     fn drop(&mut self) {
-        self.inner.unlock();
+        let local_clone = mem::replace(&mut *self.inner.wait_queue.lock().unwrap(), Vec::new());
+        println!("unlocks {}", local_clone.len());
+        for task in local_clone {
+            println!("unlocking one");
+            task.notify();
+        }
     }
 }
 
