@@ -25,6 +25,7 @@ pub enum ProtocolId {
     SCTP = 132,
     UDT = 301,
     UTP = 302,
+    P2P = 420,
     IPFS = 421,
     HTTP = 480,
     HTTPS = 443,
@@ -35,6 +36,13 @@ pub enum ProtocolId {
     Libp2pWebrtcDirect = 276,
     P2pCircuit = 290,
 }
+
+/* Protocols that are not implemented: (missing information about the kind of data)
+54 	V 	dns4 	
+55 	V 	dns6 	
+400 	V 	unix 	
+460 	0 	quic 	
+479 	0 	p2p-websocket-star 	*/
 
 impl From<ProtocolId> for u32 {
     fn from(proto: ProtocolId) -> u32 {
@@ -59,6 +67,7 @@ impl ToString for ProtocolId {
             ProtocolId::SCTP => "sctp".to_owned(),
             ProtocolId::UDT => "udt".to_owned(),
             ProtocolId::UTP => "utp".to_owned(),
+            ProtocolId::P2P => "p2p".to_owned(),
             ProtocolId::IPFS => "ipfs".to_owned(),
             ProtocolId::HTTP => "http".to_owned(),
             ProtocolId::HTTPS => "https".to_owned(),
@@ -85,6 +94,7 @@ impl FromStr for ProtocolId {
             "sctp" => Ok(ProtocolId::SCTP),
             "udt" => Ok(ProtocolId::UDT),
             "utp" => Ok(ProtocolId::UTP),
+            "p2p" => Ok(ProtocolId::P2P),
             "ipfs" => Ok(ProtocolId::IPFS),
             "http" => Ok(ProtocolId::HTTP),
             "https" => Ok(ProtocolId::HTTPS),
@@ -121,6 +131,7 @@ impl ProtocolId {
             132 => Ok(ProtocolId::SCTP),
             301 => Ok(ProtocolId::UDT),
             302 => Ok(ProtocolId::UTP),
+            420 => Ok(ProtocolId::P2P),
             421 => Ok(ProtocolId::IPFS),
             480 => Ok(ProtocolId::HTTP),
             443 => Ok(ProtocolId::HTTPS),
@@ -155,6 +166,7 @@ impl ProtocolId {
             ProtocolId::SCTP => ProtocolArgSize::Fixed { bytes: 2 },
             ProtocolId::UDT => ProtocolArgSize::Fixed { bytes: 0 },
             ProtocolId::UTP => ProtocolArgSize::Fixed { bytes: 0 },
+            ProtocolId::P2P => ProtocolArgSize::Variable,
             ProtocolId::IPFS => ProtocolArgSize::Variable,
             ProtocolId::HTTP => ProtocolArgSize::Fixed { bytes: 0 },
             ProtocolId::HTTPS => ProtocolArgSize::Fixed { bytes: 0 },
@@ -218,6 +230,10 @@ impl ProtocolId {
                 let parsed: u16 = a.parse()?;
                 Ok(AddrComponent::SCTP(parsed))
             }
+            ProtocolId::P2P => {
+                let bytes = Cid::from(a)?.to_bytes();
+                Ok(AddrComponent::P2P(bytes))
+            }
             ProtocolId::IPFS => {
                 let bytes = Cid::from(a)?.to_bytes();
                 Ok(AddrComponent::IPFS(bytes))
@@ -246,6 +262,7 @@ pub enum AddrComponent {
     SCTP(u16),
     UDT,
     UTP,
+    P2P(Vec<u8>),
     IPFS(Vec<u8>),
     HTTP,
     HTTPS,
@@ -270,6 +287,7 @@ impl AddrComponent {
             AddrComponent::SCTP(_) => ProtocolId::SCTP,
             AddrComponent::UDT => ProtocolId::UDT,
             AddrComponent::UTP => ProtocolId::UTP,
+            AddrComponent::P2P(_) => ProtocolId::P2P,
             AddrComponent::IPFS(_) => ProtocolId::IPFS,
             AddrComponent::HTTP => ProtocolId::HTTP,
             AddrComponent::HTTPS => ProtocolId::HTTPS,
@@ -340,6 +358,10 @@ impl AddrComponent {
                 let num = rdr.read_u16::<BigEndian>()?;
                 AddrComponent::SCTP(num)
             }
+            ProtocolId::P2P => {
+                let bytes = Cid::from(data)?.to_bytes();
+                AddrComponent::P2P(bytes)
+            }
             ProtocolId::IPFS => {
                 let bytes = Cid::from(data)?.to_bytes();
                 AddrComponent::IPFS(bytes)
@@ -376,6 +398,10 @@ impl AddrComponent {
             AddrComponent::SCTP(port) => {
                 out.write_u16::<BigEndian>(port)?;
             }
+            AddrComponent::P2P(bytes) => {
+                out.write_varint(bytes.len())?;
+                out.write_all(&bytes)?;
+            }
             AddrComponent::IPFS(bytes) => {
                 out.write_varint(bytes.len())?;
                 out.write_all(&bytes)?;
@@ -409,6 +435,11 @@ impl ToString for AddrComponent {
             AddrComponent::SCTP(port) => format!("/sctp/{}", port),
             AddrComponent::UDT => format!("/udt"),
             AddrComponent::UTP => format!("/utp"),
+            AddrComponent::P2P(ref bytes) => {
+                // TODO: meh for cloning
+                let c = Cid::from(bytes.clone()).expect("cid is known to be valid");
+                format!("/p2p/{}", c)
+            },
             AddrComponent::IPFS(ref bytes) => {
                 // TODO: meh for cloning
                 let c = Cid::from(bytes.clone()).expect("cid is known to be valid");
