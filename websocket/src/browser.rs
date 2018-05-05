@@ -339,6 +339,18 @@ fn multiaddr_to_target(addr: &Multiaddr) -> Result<String, ()> {
         (&AddrComponent::IP6(ref ip), &AddrComponent::TCP(port), &AddrComponent::WSS) => {
             Ok(format!("wss://[{}]:{}/", ip, port))
         }
+        (&AddrComponent::DNS4(ref ns), &AddrComponent::TCP(port), &AddrComponent::WS) => {
+            Ok(format!("ws://{}:{}/", ns, port))
+        }
+        (&AddrComponent::DNS6(ref ns), &AddrComponent::TCP(port), &AddrComponent::WS) => {
+            Ok(format!("ws://{}:{}/", ns, port))
+        }
+        (&AddrComponent::DNS4(ref ns), &AddrComponent::TCP(port), &AddrComponent::WSS) => {
+            Ok(format!("wss://{}:{}/", ns, port))
+        }
+        (&AddrComponent::DNS6(ref ns), &AddrComponent::TCP(port), &AddrComponent::WSS) => {
+            Ok(format!("wss://{}:{}/", ns, port))
+        }
         _ => Err(()),
     }
 }
