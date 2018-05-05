@@ -23,6 +23,7 @@ use multiaddr::{AddrComponent, Multiaddr};
 use rw_stream_sink::RwStreamSink;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use swarm::Transport;
+use tokio_io;
 use websocket::client::builder::ClientBuilder;
 use websocket::message::OwnedMessage;
 use websocket::server::upgrade::async::IntoWs;
@@ -100,43 +101,52 @@ where
 
                 stream
                     .into_ws()
-                    .map_err(|e| IoError::new(IoErrorKind::Other, e.3))
-                    .and_then(|stream| {
-                        // Accept the next incoming connection.
-                        stream
-                            .accept()
-                            .map_err(|err| IoError::new(IoErrorKind::Other, err))
-                            .map(|(client, _http_headers)| {
-                                debug!(target: "libp2p-websocket", "Upgraded incoming connection \
-                                                                    to websockets");
-
-                                // Plug our own API on top of the `websockets` API.
-                                let framed_data = client
+                    .then(|result| {
+                        match result {
+                            Ok(stream) => {
+                                // Accept the next incoming connection.
+                                let fut = stream
+                                    .accept()
                                     .map_err(|err| IoError::new(IoErrorKind::Other, err))
-                                    .sink_map_err(|err| IoError::new(IoErrorKind::Other, err))
-                                    .with(|data| Ok(OwnedMessage::Binary(data)))
-                                    .and_then(|recv| {
-                                        match recv {
-                                            OwnedMessage::Binary(data) => Ok(Some(data)),
-                                            OwnedMessage::Text(data) => Ok(Some(data.into_bytes())),
-                                            OwnedMessage::Close(_) => Ok(None),
-                                            // TODO: handle pings and pongs, which is freaking hard
-                                            //         for now we close the socket when that happens
-                                            _ => Ok(None)
-                                        }
-                                    })
-                                    // TODO: is there a way to merge both lines into one?
-                                    .take_while(|v| Ok(v.is_some()))
-                                    .map(|v| v.expect("we only take while this is Some"));
+                                    .map(|(client, _http_headers)| {
+                                        debug!(target: "libp2p-websocket", "Upgraded incoming connection \
+                                                                            to websockets");
 
-                                let read_write = RwStreamSink::new(framed_data);
-                                Box::new(read_write) as Box<AsyncStream>
-                            })
+                                        // Plug our own API on top of the `websockets` API.
+                                        let framed_data = client
+                                            .map_err(|err| IoError::new(IoErrorKind::Other, err))
+                                            .sink_map_err(|err| IoError::new(IoErrorKind::Other, err))
+                                            .with(|data| Ok(OwnedMessage::Binary(data)))
+                                            .and_then(|recv| {
+                                                match recv {
+                                                    OwnedMessage::Binary(data) => Ok(Some(data)),
+                                                    OwnedMessage::Text(data) => Ok(Some(data.into_bytes())),
+                                                    OwnedMessage::Close(_) => Ok(None),
+                                                    // TODO: handle pings and pongs, which is freaking hard
+                                                    //         for now we close the socket when that happens
+                                                    _ => Ok(None)
+                                                }
+                                            })
+                                            // TODO: is there a way to merge both lines into one?
+                                            .take_while(|v| Ok(v.is_some()))
+                                            .map(|v| v.expect("we only take while this is Some"));
+
+                                        let read_write = RwStreamSink::new(framed_data);
+                                        Box::new(read_write) as Box<AsyncStream>
+                                    })
+                                    .map(|s| Box::new(Ok(s).into_future()) as Box<Future<Item = _, Error = _>>)
+                                    .into_future()
+                                    .flatten()
+                                    .map(move |v| (v, client_addr));
+                                Box::new(fut) as Box<Future<Item = _, Error = _>>
+                            },
+                            Err((stream, _, _, err)) => {
+                                let fut = tokio_io::io::write_all(stream, "HTTP/1.0 404 Not Found\n\n\n")
+                                    .then(|_| Err(IoError::new(IoErrorKind::Other, err)));
+                                Box::new(fut) as Box<Future<Item = _, Error = _>>
+                            },
+                        }
                     })
-                    .map(|s| Box::new(Ok(s).into_future()) as Box<Future<Item = _, Error = _>>)
-                    .into_future()
-                    .flatten()
-                    .map(move |v| (v, client_addr))
             });
 
             Box::new(upgraded) as Box<Future<Item = _, Error = _>>
