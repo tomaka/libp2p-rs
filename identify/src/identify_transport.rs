@@ -98,22 +98,23 @@ where
             let identify_upgrade = identify_upgrade.clone();
             let cache = cache.clone();
             let fut = connec
-                .and_then(move |(connec, client_addr)| client_addr.map(move |addr| (connec, addr)))
                 .and_then(move |(connec, client_addr)| {
-                    debug!("Incoming connection from {}, dialing back in order to identify", client_addr);
+                    trace!("Incoming connection, waiting for client address");
+                    client_addr.map(move |addr| (connec, addr))
+                })
+                .and_then(move |(connec, client_addr)| {
+                    debug!("Incoming connection from {}", client_addr);
 
                     // Dial the address that connected to us and try upgrade with the
                     // identify protocol.
                     let info_future = cache_entry(&cache, client_addr.clone(), { let client_addr = client_addr.clone(); move || {
+                        debug!("No cache entry for {}, dialing back in order to identify", client_addr);
                         identify_upgrade
-                            .dial(client_addr.clone())
+                            .dial(client_addr)
                             .unwrap_or_else(|(_, addr)| {
                                 panic!("the multiaddr {} was determined to be valid earlier", addr)
                             })
-                            .and_then(move |(id, client_addr)| {
-                                client_addr.map(move |addr| (id, addr))
-                            })
-                            .map(move |(identify, client_addr)| {
+                            .map(move |(identify, _)| {
                                 let (info, observed_addr) = match identify {
                                     IdentifyOutput::RemoteInfo { info, observed_addr } => {
                                         (info, observed_addr)
@@ -124,18 +125,15 @@ where
                                     ),
                                 };
 
-                                debug!("Identified {} as pubkey {:?}", client_addr, info.public_key);
+                                debug!("Identified dialed back connection as pubkey {:?}", info.public_key);
                                 IdentifyTransportOutcome {
                                     info,
                                     observed_addr,
                                 }
                             })
-                            .map_err({
-                                let client_addr = client_addr.clone();
-                                move |err| {
-                                    debug!("Failed to identify incoming {}", client_addr);
-                                    err
-                                }
+                            .map_err(move |err| {
+                                debug!("Failed to identify dialed back connection");
+                                err
                             })
                     }});
 
@@ -175,17 +173,19 @@ where
         let cache = self.cache.clone();
         let future = dial
             .and_then(move |(connec, client_addr)| {
+                trace!("Dialing successful, waiting for client address");
                 client_addr.map(move |addr| (connec, addr))
             })
             .and_then(move |(socket, addr)| {
+                trace!("Dialing successful ; client address is {}", addr);
                 let info_future = cache_entry(&cache, addr.clone(), { let addr = addr.clone(); move || {
-                    trace!("Dialing {} again for identification", addr);
+                    trace!("No cache entry for {} ; dialing again for identification", addr);
                     identify_upgrade
                         .dial(addr)
                         .unwrap_or_else(|(_, addr)| {
                             panic!("the multiaddr {} was determined to be valid earlier", addr)
                         })
-                        .map(move |(identify, _addr)| {
+                        .map(move |(identify, _)| {
                             let (info, observed_addr) = match identify {
                                 IdentifyOutput::RemoteInfo { info, observed_addr } => {
                                     (info, observed_addr)
@@ -237,21 +237,22 @@ where
             let cache = cache.clone();
             let future = incoming
                 .and_then(move |(connec, client_addr)| {
+                    debug!("Incoming substream ; waiting for client address");
                     client_addr.map(move |addr| (connec, addr))
                 })
                 .and_then(move |(connec, client_addr)| {
+                    debug!("Incoming substream from {}", client_addr);
+
                     // Dial the address that connected to us and try upgrade with the
                     // identify protocol.
                     let info_future = cache_entry(&cache, client_addr.clone(), { let client_addr = client_addr.clone(); move || {
+                        debug!("No cache entry from {} ; dialing back to identify", client_addr);
                         identify_upgrade
-                            .dial(client_addr.clone())
+                            .dial(client_addr)
                             .unwrap_or_else(|(_, client_addr)| {
                                 panic!("the multiaddr {} was determined to be valid earlier", client_addr)
                             })
-                            .and_then(move |(id, client_addr)| {
-                                client_addr.map(move |addr| (id, addr))
-                            })
-                            .map(move |(identify, client_addr)| {
+                            .map(move |(identify, _)| {
                                 let (info, observed_addr) = match identify {
                                     IdentifyOutput::RemoteInfo { info, observed_addr } => {
                                         (info, observed_addr)
@@ -262,18 +263,15 @@ where
                                     ),
                                 };
 
-                                debug!("Identified {} as pubkey {:?}", client_addr, info.public_key);
+                                debug!("Identified incoming substream as pubkey {:?}", info.public_key);
                                 IdentifyTransportOutcome {
                                     info,
                                     observed_addr,
                                 }
                             })
-                            .map_err({
-                                let client_addr = client_addr.clone();
-                                move |err| {
-                                    debug!("Failed to identify incoming {}", client_addr);
-                                    err
-                                }
+                            .map_err(move |err| {
+                                debug!("Failed to identify incoming substream");
+                                err
                             })
                     }});
 
