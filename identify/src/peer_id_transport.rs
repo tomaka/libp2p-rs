@@ -78,21 +78,24 @@ where
                 .and_then(move |(connec, client_addr)| {
                     client_addr.map(move |addr| (connec, addr))
                 })
-                .and_then(move |(connec, original_addr)| {
-                    let socket = connec.socket;
-                    debug!("Incoming connection from {} ; now waiting for identification", original_addr);
-                    connec.info.map(move |info| (socket, info, original_addr))
-                })
-                .map(move |(socket, info, original_addr)| {
-                    let peer_id = info.info.public_key.to_peer_id();
-                    debug!("Identified connection from {} as {:?}", original_addr, peer_id);
-                    let real_addr: Multiaddr = AddrComponent::P2P(peer_id.into_bytes()).into();
+                .map(move |(connec, original_addr)| {
+                    debug!("Successfully dialed {}", original_addr);
+                    let info = connec.info.shared();
                     let out = PeerIdTransportOutput {
-                        socket: socket,
-                        info: Box::new(future::ok(info)),
-                        original_addr: original_addr,
+                        socket: connec.socket,
+                        info: Box::new(info.clone()
+                            .map(move |info| (*info).clone())
+                            .map_err(move |err| { let k = err.kind(); IoError::new(k, err) })),
+                        original_addr: original_addr.clone(),
                     };
-                    (out, Box::new(future::ok(real_addr)) as Box<Future<Item = _, Error = _>>)
+                    let real_addr = Box::new(info
+                        .map_err(move |err| { let k = err.kind(); IoError::new(k, err) })
+                        .map(move |info| {
+                            let peer_id = info.info.public_key.to_peer_id();
+                            debug!("Identified {} as {:?}", original_addr, peer_id);
+                            AddrComponent::P2P(peer_id.into_bytes()).into()
+                        })) as Box<Future<Item = _, Error = _>>;
+                    (out, real_addr)
                 });
 
             Box::new(fut) as Box<Future<Item = _, Error = _>>
@@ -176,21 +179,24 @@ where
                     .and_then(move |(connec, original_addr)| {
                         original_addr.map(move |addr| (connec, addr))
                     })
-                    .and_then(move |(connec, original_addr)| {
-                        let socket = connec.socket;
-                        debug!("Successfully dialed {} ; now waiting for identification", original_addr);
-                        connec.info.map(move |info| (socket, info, original_addr))
-                    })
-                    .map(move |(socket, info, original_addr)| {
-                        let peer_id = info.info.public_key.to_peer_id();
-                        debug!("Identified {} as {:?}", original_addr, peer_id);
-                        let real_addr: Multiaddr = AddrComponent::P2P(peer_id.into_bytes()).into();
+                    .map(move |(connec, original_addr)| {
+                        debug!("Successfully dialed {}", original_addr);
+                        let info = connec.info.shared();
                         let out = PeerIdTransportOutput {
-                            socket: socket,
-                            info: Box::new(future::ok(info)),
-                            original_addr: original_addr,
+                            socket: connec.socket,
+                            info: Box::new(info.clone()
+                                .map(move |info| (*info).clone())
+                                .map_err(move |err| { let k = err.kind(); IoError::new(k, err) })),
+                            original_addr: original_addr.clone(),
                         };
-                        (out, Box::new(future::ok(real_addr)) as Box<Future<Item = _, Error = _>>)
+                        let real_addr = Box::new(info
+                            .map_err(move |err| { let k = err.kind(); IoError::new(k, err) })
+                            .map(move |info| {
+                                let peer_id = info.info.public_key.to_peer_id();
+                                debug!("Identified {} as {:?}", original_addr, peer_id);
+                                AddrComponent::P2P(peer_id.into_bytes()).into()
+                            })) as Box<Future<Item = _, Error = _>>;
+                        (out, real_addr)
                     });
 
                 Ok(Box::new(future) as Box<_>)
@@ -221,21 +227,24 @@ where
                 .and_then(move |(connec, original_addr)| {
                     original_addr.map(move |addr| (connec, addr))
                 })
-                .and_then(move |(connec, original_addr)| {
-                    let socket = connec.socket;
-                    debug!("Incoming stream from {} ; now waiting for identification", original_addr);
-                    connec.info.map(move |info| (socket, info, original_addr))
-                })
-                .map(move |(socket, info, original_addr)| {
-                    let peer_id = info.info.public_key.to_peer_id();
-                    debug!("Identified substream from {} as {:?}", original_addr, peer_id);
-                    let real_addr: Multiaddr = AddrComponent::P2P(peer_id.into_bytes()).into();
+                .map(move |(connec, original_addr)| {
+                    debug!("Successfully dialed {}", original_addr);
+                    let info = connec.info.shared();
                     let out = PeerIdTransportOutput {
-                        socket: socket,
-                        info: Box::new(future::ok(info)),
-                        original_addr: original_addr,
+                        socket: connec.socket,
+                        info: Box::new(info.clone()
+                            .map(move |info| (*info).clone())
+                            .map_err(move |err| { let k = err.kind(); IoError::new(k, err) })),
+                        original_addr: original_addr.clone(),
                     };
-                    (out, Box::new(future::ok(real_addr)) as Box<Future<Item = _, Error = _>>)
+                    let real_addr = Box::new(info
+                        .map_err(move |err| { let k = err.kind(); IoError::new(k, err) })
+                        .map(move |info| {
+                            let peer_id = info.info.public_key.to_peer_id();
+                            debug!("Identified {} as {:?}", original_addr, peer_id);
+                            AddrComponent::P2P(peer_id.into_bytes()).into()
+                        })) as Box<Future<Item = _, Error = _>>;
+                    (out, real_addr)
                 });
 
             Box::new(future) as Box<Future<Item = _, Error = _>>
