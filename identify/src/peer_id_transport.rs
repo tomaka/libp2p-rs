@@ -51,9 +51,10 @@ where
     AddrResOut: IntoIterator<Item = Multiaddr> + 'static,       // TODO: 'static :(
 {
     type Output = PeerIdTransportOutput<Trans::Output>;
+    type MultiaddrFuture = Box<Future<Item = Multiaddr, Error = IoError>>;
     type Listener = Box<Stream<Item = Self::ListenerUpgrade, Error = IoError>>;
-    type ListenerUpgrade = Box<Future<Item = (Self::Output, Multiaddr), Error = IoError>>;
-    type Dial = Box<Future<Item = (Self::Output, Multiaddr), Error = IoError>>;
+    type ListenerUpgrade = Box<Future<Item = (Self::Output, Self::MultiaddrFuture), Error = IoError>>;
+    type Dial = Box<Future<Item = (Self::Output, Self::MultiaddrFuture), Error = IoError>>;
 
     #[inline]
     fn listen_on(self, addr: Multiaddr) -> Result<(Self::Listener, Multiaddr), (Self, Multiaddr)> {
@@ -74,6 +75,9 @@ where
 
         let listener = listener.map(move |connec| {
             let fut = connec
+                .and_then(move |(connec, client_addr)| {
+                    client_addr.map(move |addr| (connec, addr))
+                })
                 .and_then(move |(connec, original_addr)| {
                     let socket = connec.socket;
                     debug!("Incoming connection from {} ; now waiting for identification", original_addr);
@@ -88,7 +92,7 @@ where
                         info: Box::new(future::ok(info)),
                         original_addr: original_addr,
                     };
-                    (out, real_addr)
+                    (out, Box::new(future::ok(real_addr)) as Box<Future<Item = _, Error = _>>)
                 });
 
             Box::new(fut) as Box<Future<Item = _, Error = _>>
@@ -111,7 +115,6 @@ where
                 trace!("Try dialing peer ID {:?} ; loading multiaddrs from addr resolver", peer_id);
 
                 let transport = self.transport;
-                let real_addr: Multiaddr = AddrComponent::P2P(peer_id.clone().into_bytes()).into();
                 let future = stream::iter_ok(addrs)
                     // Try to dial each address through the transport.
                     .filter_map(move |addr| {
@@ -139,16 +142,18 @@ where
                         }
                     })
                     .and_then(move |((connec, original_addr), peer_id)| {
+                        original_addr.map(move |addr| (connec, addr, peer_id))
+                    })
+                    .and_then(move |(connec, original_addr, peer_id)| {
                         debug!("Successfully dialed peer {:?} through {}", peer_id, original_addr);
                         let out = PeerIdTransportOutput {
                             socket: connec.socket,
                             info: connec.info,
                             original_addr: original_addr,
                         };
-                        Ok((out, real_addr))
-                    })
-                    // Replace the multiaddress with the one of the form `/p2p/...` or `/ipfs/...`.
-                    .map(move |(socket, _inner_client_addr)| (socket, addr));
+                        // Replace the multiaddress with the one of the form `/p2p/...` or `/ipfs/...`.
+                        Ok((out, Box::new(future::ok(addr)) as Box<Future<Item = _, Error = _>>))
+                    });
 
                 Ok(Box::new(future) as Box<_>)
             }
@@ -169,6 +174,9 @@ where
 
                 let future = dial
                     .and_then(move |(connec, original_addr)| {
+                        original_addr.map(move |addr| (connec, addr))
+                    })
+                    .and_then(move |(connec, original_addr)| {
                         let socket = connec.socket;
                         debug!("Successfully dialed {} ; now waiting for identification", original_addr);
                         connec.info.map(move |info| (socket, info, original_addr))
@@ -182,7 +190,7 @@ where
                             info: Box::new(future::ok(info)),
                             original_addr: original_addr,
                         };
-                        (out, real_addr)
+                        (out, Box::new(future::ok(real_addr)) as Box<Future<Item = _, Error = _>>)
                     });
 
                 Ok(Box::new(future) as Box<_>)
@@ -204,12 +212,15 @@ where
     AddrResOut: IntoIterator<Item = Multiaddr> + 'static,   // TODO: 'static :(
 {
     type Incoming = Box<Future<Item = Self::IncomingUpgrade, Error = IoError>>;
-    type IncomingUpgrade = Box<Future<Item = (Self::Output, Multiaddr), Error = IoError>>;
+    type IncomingUpgrade = Box<Future<Item = (Self::Output, Self::MultiaddrFuture), Error = IoError>>;
 
     #[inline]
     fn next_incoming(self) -> Self::Incoming {
         let future = self.transport.next_incoming().map(move |incoming| {
             let future = incoming
+                .and_then(move |(connec, original_addr)| {
+                    original_addr.map(move |addr| (connec, addr))
+                })
                 .and_then(move |(connec, original_addr)| {
                     let socket = connec.socket;
                     debug!("Incoming stream from {} ; now waiting for identification", original_addr);
@@ -224,7 +235,7 @@ where
                         info: Box::new(future::ok(info)),
                         original_addr: original_addr,
                     };
-                    (out, real_addr)
+                    (out, Box::new(future::ok(real_addr)) as Box<Future<Item = _, Error = _>>)
                 });
 
             Box::new(future) as Box<Future<Item = _, Error = _>>
@@ -294,8 +305,9 @@ mod tests {
         }
         impl Transport for UnderlyingTrans {
             type Output = <TcpConfig as Transport>::Output;
+            type MultiaddrFuture = <TcpConfig as Transport>::MultiaddrFuture;
             type Listener = Box<Stream<Item = Self::ListenerUpgrade, Error = IoError>>;
-            type ListenerUpgrade = Box<Future<Item = (Self::Output, Multiaddr), Error = IoError>>;
+            type ListenerUpgrade = Box<Future<Item = (Self::Output, Self::MultiaddrFuture), Error = IoError>>;
             type Dial = <TcpConfig as Transport>::Dial;
             #[inline]
             fn listen_on(
