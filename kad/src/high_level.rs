@@ -265,7 +265,14 @@ where
 
     #[inline]
     fn upgrade(self, incoming: C, id: (), endpoint: Endpoint, addr: Maf) -> Self::Future {
-        let future = addr.and_then(move |addr| {
+        let future = future::ok(())
+            .and_then(move |()| {
+                trace!("Kad upgrade: waiting for remote address");
+                addr
+            })
+        .and_then(move |addr| {
+            trace!("Kad upgrade: obtained remote address");
+
             let inner = self.inner;
             let client_addr = addr.clone();
 

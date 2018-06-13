@@ -79,7 +79,7 @@ where
                     client_addr.map(move |addr| (connec, addr))
                 })
                 .map(move |(connec, original_addr)| {
-                    debug!("Successfully dialed {}", original_addr);
+                    debug!("Successfully incoming connection from {}", original_addr);
                     let info = connec.info.shared();
                     let out = PeerIdTransportOutput {
                         socket: connec.socket,
@@ -228,7 +228,7 @@ where
                     original_addr.map(move |addr| (connec, addr))
                 })
                 .map(move |(connec, original_addr)| {
-                    debug!("Successfully dialed {}", original_addr);
+                    debug!("Successful incoming substream from {}", original_addr);
                     let info = connec.info.shared();
                     let out = PeerIdTransportOutput {
                         socket: connec.socket,
