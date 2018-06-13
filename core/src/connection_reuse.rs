@@ -171,6 +171,7 @@ where
             .map(|muxer| muxer.clone())
         {
             let a = addr.clone();
+            debug!("Using existing multiplexed connection to {} ; opening outgoing substream", addr);
             Either::A(muxer.outbound().map(move |s| s.map(move |s| (s, future::ok(a)))))
         } else {
             Either::B(future::ok(None))
@@ -180,9 +181,9 @@ where
         let inner = self.inner;
         let future = substream.and_then(move |outbound| {
             if let Some(o) = outbound {
-                debug!("Using existing multiplexed connection to {}", addr);
                 return Either::A(future::ok(o));
             }
+
             // The previous stream muxer did not yield a new substream => start new dial
             debug!("No existing connection to {}; dialing", addr);
             match inner.dial(addr.clone()) {
@@ -214,7 +215,8 @@ where
                     });
                     Either::B(Either::A(future))
                 }
-                Err(_) => {
+                Err((_, addr)) => {
+                    debug!("Transport rejected multiaddress {}", addr);
                     let e = io::Error::new(io::ErrorKind::Other, "transport rejected dial");
                     Either::B(Either::B(future::err(e)))
                 }
@@ -301,6 +303,7 @@ where
         // the next iteration.
         match self.current_upgrades.poll() {
             Ok(Async::Ready(Some((muxer, client_addr)))) => {
+                trace!("New multiplexed connection to {} ; opening ingoing substream", client_addr);
                 let next_incoming = muxer.clone().inbound();
                 self.connections
                     .push((muxer.clone(), next_incoming, client_addr.clone()));
@@ -399,7 +402,7 @@ where
                 Ok(Async::Ready(Some(value))) => {
                     // A substream is ready ; push back the muxer for the next time this function
                     // is called, then return.
-                    debug!("New incoming substream");
+                    debug!("New incoming substream from {}", addr);
                     let next = muxer.clone().inbound();
                     lock.next_incoming.push((muxer, next, addr.clone()));
                     return Ok(Async::Ready(future::ok((value, future::ok(addr)))));
