@@ -205,6 +205,7 @@ impl<T: AsyncRead, Buf: Array<Item = u8>> Future for InboundFuture<T, Buf> {
 
         lock.open_stream(id);
 
+        trace!("inbound future generating substream");
         Ok(Async::Ready(Some(Substream::new(
             id,
             self.end,

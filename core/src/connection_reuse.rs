@@ -397,7 +397,7 @@ where
             let (muxer, mut future, addr) = lock.next_incoming.swap_remove(n);
             match future.poll() {
                 Ok(Async::Ready(None)) => {
-                    debug!("no inbound substream for {}", addr);
+                    debug!("No more inbound substream for {}", addr);
                     lock.active_connections.remove(&addr);
                 }
                 Ok(Async::Ready(Some(value))) => {
@@ -421,6 +421,7 @@ where
         }
 
         // Nothing is ready.
+        debug!("Finished polling ConnectionReuse incoming: nothing is ready");
         Ok(Async::NotReady)
     }
 }
