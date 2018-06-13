@@ -338,10 +338,11 @@ where F: FnOnce() -> Fut,
                 let future = if_no_entry()
                     .map(move |outcome| {
                         let mut new = new.lock();
-                        trace!("Storing outcome in cache and notifying waiters");
                         match mem::replace(&mut *new, CacheEntry::Available(outcome.clone())) {
                             CacheEntry::Available(_) => unreachable!(),
                             CacheEntry::InProgress(notif) => {
+                                trace!("Storing outcome in cache and notifying {} waiters",
+                                       notif.len());
                                 for notif in notif { let _ = notif.send(outcome.clone()); }
                             }
                         };
