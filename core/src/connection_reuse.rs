@@ -148,6 +148,7 @@ where
             .fuse()
             .map(|upgr| {
                 upgr.and_then(|(out, addr)| {
+                    trace!("Waiting for remote's address as listener");
                     addr.map(move |addr| (out, addr))
                 })
             });
@@ -190,7 +191,7 @@ where
                 Ok(dial) => {
                     let future = dial
                     .and_then(move |(muxer, addr_fut)| {
-                        trace!("Waiting for remote's address");
+                        trace!("Waiting for remote's address as dialer");
                         addr_fut.map(move |addr| (muxer, addr))
                     })
                     .and_then(move |(muxer, addr)| {

@@ -176,6 +176,7 @@ impl<T: AsyncRead, Buf: Array<Item = u8>> Future for InboundFuture<T, Buf> {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        trace!("poll inbound future");
         let mut lock = match self.state.poll_lock() {
             Async::Ready(lock) => lock,
             Async::NotReady => return Ok(Async::NotReady),
