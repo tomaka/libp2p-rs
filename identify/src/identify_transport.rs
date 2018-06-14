@@ -19,14 +19,13 @@
 // DEALINGS IN THE SOFTWARE.
 
 use fnv::FnvHashMap;
-use futures::{future, Future, Stream, sync::oneshot};
+use futures::{future, Future, Stream};
 use libp2p_core::{Multiaddr, MuxedTransport, Transport};
 use parking_lot::Mutex;
 use protocol::{IdentifyInfo, IdentifyOutput, IdentifyProtocolConfig};
 use std::collections::hash_map::Entry;
 use std::io::Error as IoError;
-use std::mem;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use tokio_io::{AsyncRead, AsyncWrite};
 
 /// Implementation of `Transport`. See [the crate root description](index.html).
@@ -34,7 +33,7 @@ pub struct IdentifyTransport<Trans> {
     transport: Trans,
     // Each entry is protected by an asynchronous mutex, so that if we dial the same node twice
     // simultaneously, the second time will block until the first time has identified it.
-    cache: Arc<Mutex<FnvHashMap<Multiaddr, Weak<Mutex<CacheEntry>>>>>,
+    cache: Arc<Mutex<FnvHashMap<Multiaddr, CacheEntry>>>,
 }
 
 impl<Trans> Clone for IdentifyTransport<Trans>
@@ -48,13 +47,7 @@ impl<Trans> Clone for IdentifyTransport<Trans>
     }
 }
 
-enum CacheEntry {
-    // The information about this node is available.
-    Available(IdentifyTransportOutcome),
-    // An existing identification is in progress. The senders in this list are going to be
-    // notified of the outcome once available.
-    InProgress(Vec<oneshot::Sender<IdentifyTransportOutcome>>),
-}
+type CacheEntry = future::Shared<Box<Future<Item = IdentifyTransportOutcome, Error = IoError>>>;
 
 impl<Trans> IdentifyTransport<Trans> {
     /// Creates an `IdentifyTransport` that wraps around the given transport and peerstore.
@@ -153,9 +146,6 @@ where
 
     #[inline]
     fn dial(self, addr: Multiaddr) -> Result<Self::Dial, (Self, Multiaddr)> {
-        // TODO: use cache
-        //if self.cache.lock().
-
         // We dial a first time the node.
         let dial = match self.transport.clone().dial(addr) {
             Ok(d) => d,
@@ -307,7 +297,7 @@ pub struct IdentifyTransportOutcome {
     pub observed_addr: Multiaddr,
 }
 
-fn cache_entry<F, Fut>(cache: &Mutex<FnvHashMap<Multiaddr, Weak<Mutex<CacheEntry>>>>, addr: Multiaddr, if_no_entry: F)
+fn cache_entry<F, Fut>(cache: &Mutex<FnvHashMap<Multiaddr, CacheEntry>>, addr: Multiaddr, if_no_entry: F)
     -> impl Future<Item = IdentifyTransportOutcome, Error = IoError>
 where F: FnOnce() -> Fut,
       Fut: Future<Item = IdentifyTransportOutcome, Error = IoError> + 'static,
@@ -316,61 +306,17 @@ where F: FnOnce() -> Fut,
     let mut cache = cache.lock();
     match cache.entry(addr) {
         Entry::Occupied(entry) => {
-            if let Some(upgraded) = entry.get().upgrade() {
-                let mut upgraded = upgraded.lock();
-                future::Either::B(match *upgraded {
-                    CacheEntry::Available(ref outcome) => {
-                        trace!("Cache entry available ; returning clone");
-                        future::Either::A(future::ok(outcome.clone()))
-                    },
-                    CacheEntry::InProgress(ref mut list) => {
-                        trace!("Cache entry contains an in progress");
-                        let (tx, rx) = oneshot::channel();
-                        list.push(tx);
-                        future::Either::B(rx.map_err(|_| unreachable!()))
-                    }
-                })
-
-            } else {
-                trace!("Cache entry outdated");
-                let new = Arc::new(Mutex::new(CacheEntry::InProgress(Vec::new())));
-                *entry.into_mut() = Arc::downgrade(&new);
-                let future = if_no_entry()
-                    .map(move |outcome| {
-                        let mut new = new.lock();
-                        match mem::replace(&mut *new, CacheEntry::Available(outcome.clone())) {
-                            CacheEntry::Available(_) => unreachable!(),
-                            CacheEntry::InProgress(notif) => {
-                                trace!("Storing outcome in cache and notifying {} waiters",
-                                       notif.len());
-                                for notif in notif { let _ = notif.send(outcome.clone()); }
-                            }
-                        };
-                        outcome
-                    });
-                future::Either::A(Box::new(future) as Box<Future<Item = _, Error = _>>) // TODO: don't box
-            }
+            trace!("Cache entry found, cloning");
+            future::Either::A(entry.get().clone())
         },
 
         Entry::Vacant(entry) => {
             trace!("No cache entry available");
-            let new = Arc::new(Mutex::new(CacheEntry::InProgress(Vec::new())));
-            entry.insert(Arc::downgrade(&new));
-            let future = if_no_entry()
-                .map(move |outcome| {
-                    let mut new = new.lock();
-                    trace!("Storing outcome in cache and notifying waiters");
-                    match mem::replace(&mut *new, CacheEntry::Available(outcome.clone())) {
-                        CacheEntry::Available(_) => unreachable!(),
-                        CacheEntry::InProgress(notif) => {
-                            for notif in notif { let _ = notif.send(outcome.clone()); }
-                        }
-                    };
-                    outcome
-                });
-            future::Either::A(Box::new(future) as Box<Future<Item = _, Error = _>>) // TODO: don't box
+            let future = (Box::new(if_no_entry()) as Box<Future<Item = _, Error = _>>).shared();
+            entry.insert(future.clone());
+            future::Either::B(future)
         },
-    }
+    }.map(|out| (*out).clone()).map_err(|err| panic!())
 }
 
 // TODO: test that we receive back what the remote sent us
