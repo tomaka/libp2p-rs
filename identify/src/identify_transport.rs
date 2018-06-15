@@ -102,11 +102,11 @@ where
                     // identify protocol.
                     let info_future = cache_entry(&cache, client_addr.clone(), { let client_addr = client_addr.clone(); move || {
                         debug!("No cache entry for {}, dialing back in order to identify", client_addr);
-                        identify_upgrade
+                        future::lazy(|| { trace!("Starting identify back"); identify_upgrade
                             .dial(client_addr)
                             .unwrap_or_else(|(_, addr)| {
                                 panic!("the multiaddr {} was determined to be valid earlier", addr)
-                            })
+                            }) })
                             .map(move |(identify, _)| {
                                 let (info, observed_addr) = match identify {
                                     IdentifyOutput::RemoteInfo { info, observed_addr } => {
@@ -170,7 +170,7 @@ where
                 trace!("Dialing successful ; client address is {}", addr);
                 let info_future = cache_entry(&cache, addr.clone(), { let addr = addr.clone(); move || {
                     trace!("No cache entry for {} ; dialing again for identification", addr);
-                    future::lazy(|| { identify_upgrade
+                    future::lazy(|| { trace!("Starting identify back"); identify_upgrade
                         .dial(addr)
                         .unwrap_or_else(|(_, addr)| {
                             panic!("the multiaddr {} was determined to be valid earlier", addr)
@@ -237,11 +237,11 @@ where
                     // identify protocol.
                     let info_future = cache_entry(&cache, client_addr.clone(), { let client_addr = client_addr.clone(); move || {
                         debug!("No cache entry from {} ; dialing back to identify", client_addr);
-                        identify_upgrade
+                        future::lazy(|| { trace!("Starting identify back"); identify_upgrade
                             .dial(client_addr)
                             .unwrap_or_else(|(_, client_addr)| {
                                 panic!("the multiaddr {} was determined to be valid earlier", client_addr)
-                            })
+                            }) })
                             .map(move |(identify, _)| {
                                 let (info, observed_addr) = match identify {
                                     IdentifyOutput::RemoteInfo { info, observed_addr } => {
