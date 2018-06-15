@@ -37,7 +37,7 @@ use bytes::Bytes;
 use core::{ConnectionUpgrade, Endpoint, StreamMuxer};
 use parking_lot::Mutex;
 use futures::prelude::*;
-use futures::future;
+use futures::{future, task};
 use tokio_io::{AsyncRead, AsyncWrite, codec::Framed};
 
 #[derive(Debug, Clone)]
@@ -67,6 +67,7 @@ where
                 inner: i.framed(codec::Codec::new(endpoint)),
                 buffer: Vec::with_capacity(32),
                 next_outbound_stream_id: if endpoint == Endpoint::Dialer { 0 } else { 1 },
+                to_notify: Vec::new(),
             }))
         };
 
@@ -96,6 +97,7 @@ struct MultiplexInner<C> {
     inner: Framed<C, codec::Codec>,
     buffer: Vec<codec::Elem>,
     next_outbound_stream_id: u32,
+    to_notify: Vec<task::Task>,
 }
 
 // Processes elements in `inner` until one matching `filter` is found.
@@ -109,12 +111,25 @@ where C: AsyncRead + AsyncWrite,
     }
 
     loop {
-        let elem = try_ready!(inner.inner.poll());
+        let elem = match inner.inner.poll() {
+            Ok(Async::Ready(item)) => item,
+            Ok(Async::NotReady) => {
+                inner.to_notify.push(task::current());
+                return Ok(Async::NotReady);
+            },
+            Err(err) => {
+                return Err(err);
+            },
+        };
+
         if let Some(elem) = elem {
             if let Some(out) = filter(&elem) {
                 return Ok(Async::Ready(Some(out)));
             } else {
                 inner.buffer.push(elem);
+                for task in inner.to_notify.drain(..) {
+                    task.notify();
+                }
             }
         } else {
             return Ok(Async::Ready(None));
