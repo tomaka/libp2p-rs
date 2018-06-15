@@ -101,7 +101,7 @@ fn main() {
     };
 
     let transport = libp2p::identify::PeerIdTransport::new(transport, addr_resolver)
-        /*.and_then({
+        .and_then({
             let peer_store = peer_store.clone();
             move |id_out, _, remote_addr| {
                 let socket = id_out.socket;
@@ -112,9 +112,7 @@ fn main() {
                     (socket, remote_addr)
                 })
             }
-        });*/
-        // TODO: ^ restore but don't wait on id_out.info ; instead parse remote_addr
-        .map(|id_out, _| id_out.socket);
+        });
 
     // We now have a `transport` variable that can be used either to dial nodes or listen to
     // incoming connections, and that will automatically apply secio and multiplex on top
