@@ -170,11 +170,11 @@ where
                 trace!("Dialing successful ; client address is {}", addr);
                 let info_future = cache_entry(&cache, addr.clone(), { let addr = addr.clone(); move || {
                     trace!("No cache entry for {} ; dialing again for identification", addr);
-                    identify_upgrade
+                    future::lazy(|| { identify_upgrade
                         .dial(addr)
                         .unwrap_or_else(|(_, addr)| {
                             panic!("the multiaddr {} was determined to be valid earlier", addr)
-                        })
+                        }) })
                         .map(move |(identify, _)| {
                             let (info, observed_addr) = match identify {
                                 IdentifyOutput::RemoteInfo { info, observed_addr } => {
