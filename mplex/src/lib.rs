@@ -64,7 +64,7 @@ where
     fn upgrade(self, i: C, _: (), endpoint: Endpoint, remote_addr: Maf) -> Self::Future {
         let out = Multiplex {
             inner: Arc::new(Mutex::new(MultiplexInner {
-                inner: i.framed(codec::Codec::new(endpoint)),
+                inner: i.framed(codec::Codec::new()),
                 buffer: Vec::with_capacity(32),
                 next_outbound_stream_id: if endpoint == Endpoint::Dialer { 0 } else { 1 },
                 to_notify: Vec::new(),
@@ -200,6 +200,7 @@ where C: AsyncRead + AsyncWrite
                 inner: self.inner.clone(),
                 current_data: Bytes::new(),
                 num,
+                endpoint: Endpoint::Listener,
             })))
         } else {
             Ok(Async::Ready(None))
@@ -227,6 +228,7 @@ where C: AsyncRead + AsyncWrite
             inner: self.inner.clone(),
             num: self.substream_id,
             current_data: Bytes::new(),
+            endpoint: Endpoint::Dialer,
         })))
     }
 }
@@ -236,6 +238,7 @@ where C: AsyncRead + AsyncWrite
 {
     inner: Arc<Mutex<MultiplexInner<C>>>,
     num: u32,
+    endpoint: Endpoint,
     // Read buffer. Contains data read from `inner` but not yet dispatched by a call to `read()`.
     current_data: Bytes,
 }
@@ -255,7 +258,7 @@ where C: AsyncRead + AsyncWrite
 
             let next_data_poll = next_match(&mut inner, |elem| {
                 match elem {
-                    &codec::Elem::Data { ref substream_id, ref data } if *substream_id == self.num => {
+                    &codec::Elem::Data { ref substream_id, ref data, .. } if *substream_id == self.num => {     // TODO: check endpoint?
                         Some(data.clone())
                     },
                     _ => None,
@@ -284,6 +287,7 @@ where C: AsyncRead + AsyncWrite
         let elem = codec::Elem::Data {
             substream_id: self.num,
             data: From::from(buf),
+            endpoint: self.endpoint,
         };
 
         let mut inner = self.inner.lock();
@@ -313,6 +317,7 @@ where C: AsyncRead + AsyncWrite
     fn shutdown(&mut self) -> Poll<(), IoError> {
         let elem = codec::Elem::Close {
             substream_id: self.num,
+            endpoint: self.endpoint,
         };
 
         let mut inner = self.inner.lock();

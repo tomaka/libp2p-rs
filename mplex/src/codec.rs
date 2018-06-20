@@ -29,13 +29,12 @@ use varint;
 #[derive(Debug, Clone)]
 pub enum Elem {
     Open { substream_id: u32 },
-    Data { substream_id: u32, data: BytesMut },
-    Close { substream_id: u32 },
-    Reset { substream_id: u32 },
+    Data { substream_id: u32, endpoint: Endpoint, data: BytesMut },
+    Close { substream_id: u32, endpoint: Endpoint },
+    Reset { substream_id: u32, endpoint: Endpoint },
 }
 
 pub struct Codec {
-    endpoint: Endpoint,
     varint_decoder: varint::VarintDecoder<u32>,
     decoder_state: CodecDecodeState,
 }
@@ -49,9 +48,8 @@ enum CodecDecodeState {
 }
 
 impl Codec {
-    pub fn new(endpoint: Endpoint) -> Codec {
+    pub fn new() -> Codec {
         Codec {
-            endpoint,
             varint_decoder: varint::VarintDecoder::new(),
             decoder_state: CodecDecodeState::Begin,
         }
@@ -106,9 +104,12 @@ impl Decoder for Codec {
                     let substream_id = (header >> 3) as u32;
                     let out = match header & 7 {
                         0 => Elem::Open { substream_id },
-                        1 | 2 => Elem::Data { substream_id, data: buf },
-                        3 | 4 => Elem::Close { substream_id },
-                        5 | 6 => Elem::Reset { substream_id },
+                        1 => Elem::Data { substream_id, endpoint: Endpoint::Listener, data: buf },
+                        2 => Elem::Data { substream_id, endpoint: Endpoint::Dialer, data: buf },
+                        3 => Elem::Close { substream_id, endpoint: Endpoint::Listener },
+                        4 => Elem::Close { substream_id, endpoint: Endpoint::Dialer },
+                        5 => Elem::Reset { substream_id, endpoint: Endpoint::Listener },
+                        6 => Elem::Reset { substream_id, endpoint: Endpoint::Dialer },
                         _ => return Err(IoErrorKind::InvalidData.into()),
                     };
 
@@ -128,26 +129,26 @@ impl Encoder for Codec {
     type Error = IoError;
 
     fn encode(&mut self, item: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        let (header, data) = match (item, self.endpoint) {
-            (Elem::Open { substream_id }, _) => {
+        let (header, data) = match item {
+            Elem::Open { substream_id } => {
                 ((substream_id as u64) << 3, BytesMut::new())
             },
-            (Elem::Data { substream_id, data }, Endpoint::Listener) => {
+            Elem::Data { substream_id, endpoint: Endpoint::Listener, data } => {
                 ((substream_id as u64) << 3 | 1, data)
             },
-            (Elem::Data { substream_id, data }, Endpoint::Dialer) => {
+            Elem::Data { substream_id, endpoint: Endpoint::Dialer, data } => {
                 ((substream_id as u64) << 3 | 2, data)
             },
-            (Elem::Close { substream_id }, Endpoint::Listener) => {
+            Elem::Close { substream_id, endpoint: Endpoint::Listener } => {
                 ((substream_id as u64) << 3 | 3, BytesMut::new())
             },
-            (Elem::Close { substream_id }, Endpoint::Dialer) => {
+            Elem::Close { substream_id, endpoint: Endpoint::Dialer } => {
                 ((substream_id as u64) << 3 | 4, BytesMut::new())
             },
-            (Elem::Reset { substream_id }, Endpoint::Listener) => {
+            Elem::Reset { substream_id, endpoint: Endpoint::Listener } => {
                 ((substream_id as u64) << 3 | 5, BytesMut::new())
             },
-            (Elem::Reset { substream_id }, Endpoint::Dialer) => {
+            Elem::Reset { substream_id, endpoint: Endpoint::Dialer } => {
                 ((substream_id as u64) << 3 | 6, BytesMut::new())
             },
         };
