@@ -288,7 +288,10 @@ where C: AsyncRead + AsyncWrite
 
         let mut inner = self.inner.lock();
         match poll_send(&mut inner, elem) {
-            Ok(Async::Ready(())) => Ok(buf.len()),
+            Ok(Async::Ready(())) => {
+                let _ = inner.inner.poll_complete();
+                Ok(buf.len())
+            },
             Ok(Async::NotReady) => Err(IoErrorKind::WouldBlock.into()),
             Err(err) => Err(err),
         }
