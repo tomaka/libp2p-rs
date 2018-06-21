@@ -77,9 +77,13 @@ extern crate varint;
 
 pub use self::identify_transport::IdentifyTransportOutcome;
 pub use self::peer_id_transport::{PeerIdTransport, PeerIdTransportOutput};
-pub use self::protocol::{IdentifyInfo, IdentifyOutput, IdentifyProtocolConfig, IdentifySender};
+pub use self::protocol::{IdentifyInfo, IdentifyInfoPublicKey, IdentifyOutput};
+pub use self::protocol::{IdentifyProtocolConfig, IdentifySender};
 
 mod identify_transport;
 mod peer_id_transport;
 mod protocol;
+#[path = "protobuf_structs/keys.rs"]
+mod keys_proto;
+#[path = "protobuf_structs/structs.rs"]
 mod structs_proto;

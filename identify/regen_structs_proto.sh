@@ -7,6 +7,6 @@ sudo docker run --rm -v `pwd`:/usr/code:z -w /usr/code rust /bin/bash -c " \
     apt-get update; \
     apt-get install -y protobuf-compiler; \
     cargo install protobuf; \
-    protoc --rust_out . structs.proto"
+    protoc --rust_out . structs.proto keys.proto"
 
 mv -f structs.rs ./src/structs_proto.rs
