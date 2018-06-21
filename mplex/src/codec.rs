@@ -157,9 +157,6 @@ impl Encoder for Codec {
         let data_len = data.as_ref().len();
         let data_len_bytes = varint::encode(data_len);
 
-        println!("sending with len {}", data_len);
-        println!("data: {:?}", data);
-
         dst.reserve(header_bytes.len() + data_len_bytes.len() + data_len);
         dst.put(header_bytes);
         dst.put(data_len_bytes);
