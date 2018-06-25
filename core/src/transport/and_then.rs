@@ -120,7 +120,7 @@ where
     F: Future<Item = (O, Maf), Error = IoError> + 'static,
     Maf: Future<Item = Multiaddr, Error = IoError> + 'static,
 {
-    type Incoming = Box<Future<Item = Self::IncomingUpgrade, Error = IoError>>;
+    type Incoming = Box<Future<Item = Option<Self::IncomingUpgrade>, Error = IoError>>;
     type IncomingUpgrade = Box<Future<Item = (O, Self::MultiaddrFuture), Error = IoError>>;
 
     #[inline]
@@ -128,13 +128,15 @@ where
         let upgrade = self.upgrade;
 
         let future = self.transport.next_incoming().map(|future| {
-            // Try to negotiate the protocol.
-            let future = future.and_then(move |(connection, client_addr)| {
-                let upgrade = upgrade.clone();
-                upgrade(connection, Endpoint::Listener, client_addr)
-            });
+            future.map(|future| {
+                // Try to negotiate the protocol.
+                let future = future.and_then(move |(connection, client_addr)| {
+                    let upgrade = upgrade.clone();
+                    upgrade(connection, Endpoint::Listener, client_addr)
+                });
 
-            Box::new(future) as Box<Future<Item = _, Error = _>>
+                Box::new(future) as Box<Future<Item = _, Error = _>>
+            })
         });
 
         Box::new(future) as Box<_>

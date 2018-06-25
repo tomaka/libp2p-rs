@@ -19,7 +19,6 @@
 // DEALINGS IN THE SOFTWARE.
 
 use futures::prelude::*;
-use futures::stream;
 use std::io::Error as IoError;
 use transport::Transport;
 
@@ -27,7 +26,7 @@ use transport::Transport;
 /// the dialed node can dial you back.
 pub trait MuxedTransport: Transport {
     /// Future resolving to a future that will resolve to an incoming connection.
-    type Incoming: Future<Item = Self::IncomingUpgrade, Error = IoError>;
+    type Incoming: Future<Item = Option<Self::IncomingUpgrade>, Error = IoError>;
     /// Future resolving to an incoming connection.
     type IncomingUpgrade: Future<Item = (Self::Output, Self::MultiaddrFuture), Error = IoError>;
 
@@ -38,15 +37,4 @@ pub trait MuxedTransport: Transport {
     fn next_incoming(self) -> Self::Incoming
     where
         Self: Sized;
-
-    /// Returns a stream of incoming connections.
-    #[inline]
-    fn incoming(
-        self,
-    ) -> stream::AndThen<stream::Repeat<Self, IoError>, fn(Self) -> Self::Incoming, Self::Incoming>
-    where
-        Self: Sized + Clone,
-    {
-        stream::repeat(self).and_then(|me| me.next_incoming())
-    }
 }

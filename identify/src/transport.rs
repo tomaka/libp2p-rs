@@ -291,7 +291,7 @@ where
     PStoreRef: Deref<Target = PStore> + Clone + 'static,
     for<'r> &'r PStore: Peerstore,
 {
-    type Incoming = Box<Future<Item = Self::IncomingUpgrade, Error = IoError>>;
+    type Incoming = Box<Future<Item = Option<Self::IncomingUpgrade>, Error = IoError>>;
     type IncomingUpgrade = Box<Future<Item = (Self::Output, Self::MultiaddrFuture), Error = IoError>>;
 
     #[inline]
@@ -301,61 +301,63 @@ where
         let addr_ttl = self.addr_ttl;
 
         let future = self.transport.next_incoming().map(move |incoming| {
-            let peerstore = peerstore.clone();
-            let future = incoming
-            .and_then(move |(connec, client_addr)| {
-                client_addr.map(move |out| (connec, out))
-            })
-            .and_then(move |(connec, client_addr)| {
-                for peer_id in peerstore.peers() {
-                    let peer = match peerstore.peer(&peer_id) {
-                        Some(p) => p,
-                        None => continue,
-                    };
+            incoming.map(move |incoming| {
+                let peerstore = peerstore.clone();
+                let future = incoming
+                .and_then(move |(connec, client_addr)| {
+                    client_addr.map(move |out| (connec, out))
+                })
+                .and_then(move |(connec, client_addr)| {
+                    for peer_id in peerstore.peers() {
+                        let peer = match peerstore.peer(&peer_id) {
+                            Some(p) => p,
+                            None => continue,
+                        };
 
-                    if peer.addrs().any(|addr| addr == client_addr) {
-                        debug!("Incoming substream from {} identified as {:?}", client_addr, peer_id);
-                        let out = IdentifyTransportOutput { socket: connec, observed_addr: None };
-                        let ret = (out, future::ok(AddrComponent::P2P(peer_id.into_bytes()).into()));
-                        return future::Either::A(future::ok(ret));
-                    }
-                }
-
-                // On an incoming connection, dial back the node and upgrade to the identify
-                // protocol.
-                let future = identify_upgrade
-                    .clone()
-                    .dial(client_addr.clone())
-                    .map_err(|_| {
-                        IoError::new(IoErrorKind::Other, "couldn't dial back incoming node")
-                    })
-                    .into_future()
-                    .and_then(move |dial| dial)
-                    .map(move |dial| (dial, connec))
-                    .and_then(move |(identify, connec)| {
-                        // Add the info to the peerstore and compute the "real" address of the
-                        // node (in the form `/p2p/...`).
-                        match identify {
-                            (IdentifyOutput::RemoteInfo { info, observed_addr }, old_addr) => {
-                                old_addr.and_then(move |out| {
-                                    let real_addr = process_identify_info(&info, &*peerstore, out, addr_ttl)?;
-                                    Ok((real_addr, observed_addr, connec))
-                                })
-                            }
-                            _ => unreachable!(
-                                "the identify protocol guarantees that we receive remote \
-                                 information when we dial a node"
-                            ),
+                        if peer.addrs().any(|addr| addr == client_addr) {
+                            debug!("Incoming substream from {} identified as {:?}", client_addr, peer_id);
+                            let out = IdentifyTransportOutput { socket: connec, observed_addr: None };
+                            let ret = (out, future::ok(AddrComponent::P2P(peer_id.into_bytes()).into()));
+                            return future::Either::A(future::ok(ret));
                         }
-                    })
-                    .map(move |(real_addr, observed, connec)| {
-                        let out = IdentifyTransportOutput { socket: connec, observed_addr: Some(observed) };
-                        (out, future::ok(real_addr))
-                    });
-                future::Either::B(future)
-            });
+                    }
 
-            Box::new(future) as Box<Future<Item = _, Error = _>>
+                    // On an incoming connection, dial back the node and upgrade to the identify
+                    // protocol.
+                    let future = identify_upgrade
+                        .clone()
+                        .dial(client_addr.clone())
+                        .map_err(|_| {
+                            IoError::new(IoErrorKind::Other, "couldn't dial back incoming node")
+                        })
+                        .into_future()
+                        .and_then(move |dial| dial)
+                        .map(move |dial| (dial, connec))
+                        .and_then(move |(identify, connec)| {
+                            // Add the info to the peerstore and compute the "real" address of the
+                            // node (in the form `/p2p/...`).
+                            match identify {
+                                (IdentifyOutput::RemoteInfo { info, observed_addr }, old_addr) => {
+                                    old_addr.and_then(move |out| {
+                                        let real_addr = process_identify_info(&info, &*peerstore, out, addr_ttl)?;
+                                        Ok((real_addr, observed_addr, connec))
+                                    })
+                                }
+                                _ => unreachable!(
+                                    "the identify protocol guarantees that we receive remote \
+                                    information when we dial a node"
+                                ),
+                            }
+                        })
+                        .map(move |(real_addr, observed, connec)| {
+                            let out = IdentifyTransportOutput { socket: connec, observed_addr: Some(observed) };
+                            (out, future::ok(real_addr))
+                        });
+                    future::Either::B(future)
+                });
+
+                Box::new(future) as Box<Future<Item = _, Error = _>>
+            })
         });
 
         Box::new(future) as Box<_>

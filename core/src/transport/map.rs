@@ -93,17 +93,17 @@ where
     T: MuxedTransport + 'static,             // TODO: 'static :-/
     F: FnOnce(T::Output, Endpoint) -> D + Clone + 'static, // TODO: 'static :-/
 {
-    type Incoming = Box<Future<Item = Self::IncomingUpgrade, Error = IoError>>;
+    type Incoming = Box<Future<Item = Option<Self::IncomingUpgrade>, Error = IoError>>;
     type IncomingUpgrade = Box<Future<Item = (Self::Output, Self::MultiaddrFuture), Error = IoError>>;
 
     fn next_incoming(self) -> Self::Incoming {
         let map = self.map;
-        let future = self.transport.next_incoming().map(move |upgrade| {
-            let future = upgrade.map(move |(output, addr)| {
-                (map(output, Endpoint::Listener), addr)
-            });
-            Box::new(future) as Box<_>
-        });
-        Box::new(future)
+        Box::new(self.transport.next_incoming().map(move |upgrade| {
+            upgrade.map(move |upgrade| {
+                Box::new(upgrade.map(move |(output, addr)| {
+                    (map(output, Endpoint::Listener), addr)
+                })) as Box<_>
+            })
+        }))
     }
 }

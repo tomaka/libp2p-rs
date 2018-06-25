@@ -39,7 +39,7 @@ impl<T> MuxedTransport for DummyMuxing<T>
 where
     T: Transport,
 {
-    type Incoming = future::Empty<Self::IncomingUpgrade, IoError>;
+    type Incoming = future::Empty<Option<Self::IncomingUpgrade>, IoError>;
     type IncomingUpgrade = future::Empty<(T::Output, Self::MultiaddrFuture), IoError>;
 
     fn next_incoming(self) -> Self::Incoming

@@ -113,7 +113,7 @@ where
         self,
     ) -> Box<
         Future<
-                Item = Box<Future<Item = (C::Output, C::MultiaddrFuture), Error = IoError> + 'a>,
+                Item = Option<Box<Future<Item = (C::Output, C::MultiaddrFuture), Error = IoError> + 'a>>,
                 Error = IoError,
             >
             + 'a,
@@ -125,13 +125,15 @@ where
     {
         let upgrade = self.upgrade;
 
-        let future = self.transports.next_incoming().map(|future| {
-            // Try to negotiate the protocol.
-            let future = future.and_then(move |(connection, client_addr)| {
-                apply(connection, upgrade, Endpoint::Listener, client_addr)
-            });
+        let future = self.transports.next_incoming().map(move |future| {
+            future.map(move |future| {
+                // Try to negotiate the protocol.
+                let future = future.and_then(move |(connection, client_addr)| {
+                    apply(connection, upgrade, Endpoint::Listener, client_addr)
+                });
 
-            Box::new(future) as Box<Future<Item = _, Error = _>>
+                Box::new(future) as Box<Future<Item = _, Error = _>>
+            })
         });
 
         Box::new(future) as Box<_>
@@ -236,7 +238,7 @@ where
     C::NamesIter: Clone, // TODO: not elegant
     C: Clone,
 {
-    type Incoming = Box<Future<Item = Self::IncomingUpgrade, Error = IoError>>;
+    type Incoming = Box<Future<Item = Option<Self::IncomingUpgrade>, Error = IoError>>;
     type IncomingUpgrade = Box<Future<Item = (C::Output, Self::MultiaddrFuture), Error = IoError>>;
 
     #[inline]

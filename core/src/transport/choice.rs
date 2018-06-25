@@ -92,19 +92,23 @@ where
     A::Output: 'static,          // TODO: meh :-/
     B::Output: 'static,          // TODO: meh :-/
 {
-    type Incoming = Box<Future<Item = Self::IncomingUpgrade, Error = IoError>>;
+    type Incoming = Box<Future<Item = Option<Self::IncomingUpgrade>, Error = IoError>>;
     type IncomingUpgrade =
         Box<Future<Item = (EitherOutput<A::Output, B::Output>, Self::MultiaddrFuture), Error = IoError>>;
 
     #[inline]
     fn next_incoming(self) -> Self::Incoming {
         let first = self.0.next_incoming().map(|out| {
-            let fut = out.map(move |(v, addr)| (EitherOutput::First(v), future::Either::A(addr)));
-            Box::new(fut) as Box<Future<Item = _, Error = _>>
+            out.map(|out| {
+                let fut = out.map(move |(v, addr)| (EitherOutput::First(v), future::Either::A(addr)));
+                Box::new(fut) as Box<Future<Item = _, Error = _>>
+            })
         });
         let second = self.1.next_incoming().map(|out| {
-            let fut = out.map(move |(v, addr)| (EitherOutput::Second(v), future::Either::B(addr)));
-            Box::new(fut) as Box<Future<Item = _, Error = _>>
+            out.map(|out| {
+                let fut = out.map(move |(v, addr)| (EitherOutput::Second(v), future::Either::B(addr)));
+                Box::new(fut) as Box<Future<Item = _, Error = _>>
+            })
         });
         let future = first.select(second).map(|(i, _)| i).map_err(|(e, _)| e);
         Box::new(future) as Box<_>

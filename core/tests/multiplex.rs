@@ -271,7 +271,7 @@ fn use_opened_listen_to_dial() {
                 .clone()
                 .next_incoming()
                 .and_then(|server| server)
-                .map(|server| Framed::<_, BytesMut>::new(server.0))
+                .map(|server| Framed::<_, BytesMut>::new(server.unwrap().0))
                 .map(|server| (first_connec, server))
         })
         .and_then(|(_first, second)| second.send("second message".into()))

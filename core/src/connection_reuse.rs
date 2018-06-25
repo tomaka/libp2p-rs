@@ -369,7 +369,7 @@ impl<M> Future for ConnectionReuseIncoming<M>
 where
     M: Clone + StreamMuxer,
 {
-    type Item = future::FutureResult<(M::Substream, future::FutureResult<Multiaddr, IoError>), IoError>;
+    type Item = Option<future::FutureResult<(M::Substream, future::FutureResult<Multiaddr, IoError>), IoError>>;
     type Error = IoError;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -405,7 +405,8 @@ where
                     debug!("New incoming substream");
                     let next = muxer.clone().inbound();
                     lock.next_incoming.push((muxer, next, addr.clone()));
-                    return Ok(Async::Ready(future::ok((value, future::ok(addr)))));
+                    // TODO: return None at some point?
+                    return Ok(Async::Ready(Some(future::ok((value, future::ok(addr))))));
                 }
                 Ok(Async::NotReady) => {
                     lock.next_incoming.push((muxer, future, addr));

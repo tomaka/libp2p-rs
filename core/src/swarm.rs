@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use futures::stream::{FuturesUnordered, StreamFuture};
+use futures::stream::{Fuse as StreamFuse, FuturesUnordered, StreamFuture};
 use futures::sync::mpsc;
 use futures::{future, Async, Future, IntoFuture, Poll, Stream};
 use std::fmt;
@@ -49,14 +49,14 @@ where
     let future = SwarmFuture {
         transport: transport.clone(),
         handler: handler,
-        new_listeners: new_listeners_rx,
-        next_incoming: transport.clone().next_incoming(),
+        new_listeners: new_listeners_rx.fuse(),
+        next_incoming: Some(transport.clone().next_incoming()),
         listeners: FuturesUnordered::new(),
         listeners_upgrade: FuturesUnordered::new(),
         dialers: FuturesUnordered::new(),
-        new_dialers: new_dialers_rx,
+        new_dialers: new_dialers_rx.fuse(),
         to_process: FuturesUnordered::new(),
-        new_toprocess: new_toprocess_rx,
+        new_toprocess: new_toprocess_rx.fuse(),
     };
 
     let controller = SwarmController {
@@ -157,8 +157,9 @@ where
 {
     transport: T,
     handler: H,
-    new_listeners: mpsc::UnboundedReceiver<T::Listener>,
-    next_incoming: T::Incoming,
+    new_listeners: StreamFuse<mpsc::UnboundedReceiver<T::Listener>>,
+    // Next incoming substream, or `None` of a previous incoming has produced `None`.
+    next_incoming: Option<T::Incoming>,
     listeners: FuturesUnordered<
         StreamFuture<
             Box<
@@ -173,9 +174,9 @@ where
         FuturesUnordered<Box<Future<Item = (T::Output, Box<Future<Item = Multiaddr, Error = IoError>>), Error = IoError>>>,
     dialers: FuturesUnordered<Box<Future<Item = (T::Output, Box<Future<Item = Multiaddr, Error = IoError>>), Error = IoError>>>,
     new_dialers:
-        mpsc::UnboundedReceiver<Box<Future<Item = (T::Output, Box<Future<Item = Multiaddr, Error = IoError>>), Error = IoError>>>,
+        StreamFuse<mpsc::UnboundedReceiver<Box<Future<Item = (T::Output, Box<Future<Item = Multiaddr, Error = IoError>>), Error = IoError>>>>,
     to_process: FuturesUnordered<future::Either<F, Box<Future<Item = (), Error = IoError>>>>,
-    new_toprocess: mpsc::UnboundedReceiver<Box<Future<Item = (), Error = IoError>>>,
+    new_toprocess: StreamFuse<mpsc::UnboundedReceiver<Box<Future<Item = (), Error = IoError>>>>,
 }
 
 impl<T, H, If, F> Future for SwarmFuture<T, H, F>
@@ -191,19 +192,33 @@ where
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let handler = &mut self.handler;
 
-        match self.next_incoming.poll() {
-            Ok(Async::Ready(connec)) => {
-                debug!("Swarm received new multiplexed incoming connection");
-                self.next_incoming = self.transport.clone().next_incoming();
-                let connec = connec.map(|(out, maf)| {
-                    (out, Box::new(maf) as Box<Future<Item = Multiaddr, Error = IoError>>)
-                });
-                self.listeners_upgrade.push(Box::new(connec) as Box<_>);
-            }
-            Ok(Async::NotReady) => {}
-            Err(err) => {
-                debug!("Error in multiplexed incoming connection: {:?}", err);
-                self.next_incoming = self.transport.clone().next_incoming();
+        loop {
+            if let Some(mut next_incoming) = self.next_incoming.take() {
+                match next_incoming.poll() {
+                    Ok(Async::Ready(Some(connec))) => {
+                        debug!("Swarm received new multiplexed incoming connection");
+                        self.next_incoming = Some(self.transport.clone().next_incoming());
+                        let connec = connec.map(|(out, maf)| {
+                            (out, Box::new(maf) as Box<Future<Item = Multiaddr, Error = IoError>>)
+                        });
+                        self.listeners_upgrade.push(Box::new(connec) as Box<_>);
+                    }
+                    Ok(Async::Ready(None)) => {
+                        debug!("Swarm detected end of incoming connections");
+                        break;
+                    }
+                    Ok(Async::NotReady) => {
+                        self.next_incoming = Some(next_incoming);
+                        break
+                    },
+                    Err(err) => {
+                        debug!("Error in multiplexed incoming connection: {:?}", err);
+                        self.next_incoming = Some(self.transport.clone().next_incoming());
+                        break;
+                    }
+                }
+            } else {
+                break;
             }
         }
 
@@ -313,8 +328,15 @@ where
             }
         }
 
-        // TODO: we never return `Ok(Ready)` because there's no way to know whether
-        //       `next_incoming()` can produce anything more in the future
-        Ok(Async::NotReady)
+        // We return `Ok(Ready)` if there's no way that anything more can happen in the future.
+        if self.next_incoming.is_none() && self.new_listeners.is_done() &&
+            self.new_dialers.is_done() && self.new_toprocess.is_done() &&
+            self.listeners.is_empty() && self.listeners_upgrade.is_empty() &&
+            self.dialers.is_empty()
+        {
+            Ok(Async::Ready(()))
+        } else {
+            Ok(Async::NotReady)
+        }
     }
 }

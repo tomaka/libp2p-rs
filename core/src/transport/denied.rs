@@ -54,7 +54,7 @@ impl Transport for DeniedTransport {
 }
 
 impl MuxedTransport for DeniedTransport {
-    type Incoming = future::Empty<Self::IncomingUpgrade, io::Error>;
+    type Incoming = future::Empty<Option<Self::IncomingUpgrade>, io::Error>;
     type IncomingUpgrade = future::Empty<(Self::Output, Self::MultiaddrFuture), io::Error>;
 
     #[inline]
