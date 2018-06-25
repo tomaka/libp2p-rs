@@ -91,7 +91,7 @@ where
                     let real_addr = Box::new(info
                         .map_err(move |err| { let k = err.kind(); IoError::new(k, err) })
                         .map(move |info| {
-                            let peer_id = info.info.public_key.to_peer_id();
+                            let peer_id = info.info.public_key.clone().into_peer_id();
                             debug!("Identified {} as {:?}", original_addr, peer_id);
                             AddrComponent::P2P(peer_id.into_bytes()).into()
                         })) as Box<Future<Item = _, Error = _>>;
@@ -192,7 +192,7 @@ where
                         let real_addr = Box::new(info
                             .map_err(move |err| { let k = err.kind(); IoError::new(k, err) })
                             .map(move |info| {
-                                let peer_id = info.info.public_key.to_peer_id();
+                                let peer_id = info.info.public_key.clone().into_peer_id();
                                 debug!("Identified {} as {:?}", original_addr, peer_id);
                                 AddrComponent::P2P(peer_id.into_bytes()).into()
                             })) as Box<Future<Item = _, Error = _>>;
@@ -240,7 +240,7 @@ where
                     let real_addr = Box::new(info
                         .map_err(move |err| { let k = err.kind(); IoError::new(k, err) })
                         .map(move |info| {
-                            let peer_id = info.info.public_key.to_peer_id();
+                            let peer_id = info.info.public_key.clone().into_peer_id();
                             debug!("Identified {} as {:?}", original_addr, peer_id);
                             AddrComponent::P2P(peer_id.into_bytes()).into()
                         })) as Box<Future<Item = _, Error = _>>;
@@ -298,7 +298,7 @@ mod tests {
     use self::tokio_core::reactor::Core;
     use PeerIdTransport;
     use futures::{Future, Stream};
-    use libp2p_core::{Transport, PeerId, PublicKeyBytesSlice};
+    use libp2p_core::{Transport, PeerId, PublicKey};
     use multiaddr::{AddrComponent, Multiaddr};
     use std::io::Error as IoError;
     use std::iter;
@@ -339,7 +339,7 @@ mod tests {
             }
         }
 
-        let peer_id = PeerId::from_public_key(PublicKeyBytesSlice(&[1, 2, 3, 4]));
+        let peer_id = PeerId::from_public_key(PublicKey::Rsa(vec![1, 2, 3, 4]));
 
         let mut core = Core::new().unwrap();
         let underlying = UnderlyingTrans {
