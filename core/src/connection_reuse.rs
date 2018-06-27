@@ -421,7 +421,6 @@ where
         }
 
         // Nothing is ready.
-        debug!("Finished polling ConnectionReuse incoming: nothing is ready");
         Ok(Async::NotReady)
     }
 }
