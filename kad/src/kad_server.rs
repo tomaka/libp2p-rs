@@ -41,7 +41,6 @@ use protocol::{self, KadMsg, KademliaProtocolConfig, Peer};
 use std::collections::VecDeque;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use std::iter;
-use std::sync::{Arc, atomic};
 use tokio_io::{AsyncRead, AsyncWrite};
 
 /// Configuration for a Kademlia server.
@@ -240,8 +239,7 @@ where
             .map_err(|_| unreachable!());
         let rq_rx = rq_rx
             .map(|(m, o)| EventSource::LocalRequest(m, o))
-            .map_err(|_| unreachable!())
-            .chain(future::ok(EventSource::Finished).into_stream());
+            .map_err(|_| unreachable!());
         let kad_stream = kad_stream
             .map(|m| EventSource::Remote(m))
             .chain(future::ok(EventSource::Finished).into_stream());
