@@ -30,10 +30,11 @@ use bigint::U512;
 use futures::{Future, Stream};
 use libp2p::peerstore::{PeerAccess, PeerId, Peerstore};
 use libp2p::Multiaddr;
+use std::collections::HashMap;
 use std::env;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use libp2p::core::{Transport, PublicKey};
+use libp2p::core::{Transport, PublicKey, UniqueConnec};
 use libp2p::core::{upgrade, either::EitherOutput};
 use libp2p::kad::{ConnectionType, Peer, QueryEvent};
 use libp2p::tcp::TcpConfig;
@@ -133,33 +134,56 @@ fn main() {
 
     let proto = libp2p::kad::KademliaUpgrade::from_prototype(&kad_ctl_proto);
 
+    let active_kad_connections = Arc::new(Mutex::new(HashMap::<_, UniqueConnec<_>>::new()));
+
     // Let's put this `transport` into a *swarm*. The swarm will handle all the incoming and
     // outgoing connections for us.
     let (swarm_controller, swarm_future) = libp2p::core::swarm(
         transport.clone().with_upgrade(proto.clone()),
         {
             let peer_store = peer_store.clone();
-            move |kademlia_stream, _| {
+            let kad_system = kad_system.clone();
+            let active_kad_connections = active_kad_connections.clone();
+            move |(kad_ctrl, kad_stream), node_addr| {
                 let peer_store = peer_store.clone();
-                kademlia_stream.for_each(move |req| {
-                    let peer_store = peer_store.clone();
-                    let result = req
-                        .requested_peers()
-                        .map(move |peer_id| {
-                            let addrs = peer_store
-                                .peer(peer_id)
-                                .into_iter()
-                                .flat_map(|p| p.addrs())
-                                .collect::<Vec<_>>();
-                            Peer {
-                                node_id: peer_id.clone(),
-                                multiaddrs: addrs,
-                                connection_ty: ConnectionType::Connected, // meh :-/
+                let kad_system = kad_system.clone();
+                let active_kad_connections = active_kad_connections.clone();
+                node_addr.and_then(move |node_addr| {
+                    let node_id = p2p_multiaddr_to_node_id(node_addr);
+                    let node_id2 = node_id.clone();
+                    let fut = kad_stream.for_each(move |req| {
+                        let peer_store = peer_store.clone();
+                        kad_system.update_kbuckets(node_id2.clone());
+                        match req {
+                            KadIncomingRequest::FindNode { searched, responder } => {
+                                let result = kad_system
+                                    .known_closest_peers(&searched)
+                                    .map(move |peer_id| {
+                                        let addrs = peer_store
+                                            .peer(&peer_id)
+                                            .into_iter()
+                                            .flat_map(|p| p.addrs())
+                                            .collect::<Vec<_>>();
+                                        KadPeer {
+                                            node_id: peer_id.clone(),
+                                            multiaddrs: addrs,
+                                            connection_ty: KadConnectionType::Connected, // meh :-/
+                                        }
+                                    })
+                                    .collect::<Vec<_>>();
+                                responder.respond(result);
+                            },
+                            KadIncomingRequest::PingPong => {
                             }
-                        })
-                        .collect::<Vec<_>>();
-                    req.respond(result);
-                    Ok(())
+                        };
+                        Ok(())
+                    });
+
+                    let mut active_kad_connections = active_kad_connections.lock().unwrap();
+                    active_kad_connections
+                        .entry(node_id)
+                        .or_insert_with(Default::default)
+                        .set_until(kad_ctrl, fut)
                 })
             }
         }
@@ -175,8 +199,13 @@ fn main() {
         println!("Now listening on {:?}", addr);
     }
 
-    let finish_enum = kad_controller
-        .find_node(my_peer_id.clone())
+    let finish_enum = kad_system
+        .find_node(my_peer_id.clone(), |peer| {
+            let addr = Multiaddr::from(libp2p::multiaddr::AddrComponent::P2P(peer.clone().into_bytes()));
+            active_kad_connections.lock().unwrap().entry(peer.clone())
+                .or_insert_with(Default::default)
+                .get_or_dial(&swarm_controller, &addr, transport.clone().with_upgrade(KadConnecConfig::new()))
+        })
         .filter_map(move |event| {
             match event {
                 QueryEvent::NewKnownMultiaddrs(peers) => {
@@ -214,13 +243,29 @@ fn main() {
     ).unwrap();
 }
 
+/// Expects a multiaddr of the format `/p2p/<node_id>` and returns the node ID.
+/// Panics if the format is not correct.
+fn p2p_multiaddr_to_node_id(client_addr: Multiaddr) -> PeerId {
+	let (first, second);
+	{
+		let mut iter = client_addr.iter();
+		first = iter.next();
+		second = iter.next();
+	}
+	match (first, second) {
+		(Some(libp2p::multiaddr::AddrComponent::P2P(node_id)), None) =>
+			PeerId::from_bytes(node_id).expect("libp2p always reports a valid node id"),
+		_ => panic!("Reported multiaddress is in the wrong format ; programmer error")
+	}
+}
+
 /// Stores initial addresses on the given peer store. Uses a very large timeout.
 pub fn ipfs_bootstrap<P>(peer_store: P)
 where
     P: Peerstore + Clone,
 {
     const ADDRESSES: &[&str] = &[
-        "/ip4/127.0.0.1/tcp/4001/ipfs/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+        "/ip4/127.0.0.1/tcp/4001/ipfs/QmQRx32wQkw3hB45j4UDw8V9Ju4mGbxMyhs2m8mpFrFkur",
         // TODO: add some bootstrap nodes here
     ];
 
