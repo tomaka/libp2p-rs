@@ -163,11 +163,7 @@ impl<T> UniqueConnec<T> {
             .then(move |val| {
                 assert!(!called_once, "Future::poll() called again after returning Some");
                 called_once = true;
-                let mut inner = inner_clone.lock();
-                match mem::replace(&mut *inner, UniqueConnecInner::Empty) {
-                    UniqueConnecInner::Full { .. } => (),
-                    _ => panic!("Wrong state in the UniqueConnec ; programmer error")
-                }
+                *inner_clone.lock() = UniqueConnecInner::Empty;
                 val
             })
     }
