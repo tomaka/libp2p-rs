@@ -140,7 +140,7 @@ where
                             Some(connec) => Ok((connec, peer_id)),
                             None => {
                                 debug!("All multiaddresses failed when dialing peer {:?}", peer_id);
-                                Err(IoError::new(IoErrorKind::Other, "couldn't find any multiaddress for peer"))
+                                Err(IoError::new(IoErrorKind::Other, "all attempted multiaddress failed"))
                             },
                         }
                     })

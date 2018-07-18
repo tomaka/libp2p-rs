@@ -121,7 +121,7 @@ impl<T> UniqueConnec<T> {
 
     /// Loads the value from the object.
     ///
-    /// If the object is empty, calls the closure. The closure should return a future that
+    /// If the object is empty or errored, calls the closure. The closure should return a future that
     /// should be signaled after `set_until` has been called. If the future produces an error,
     /// then the object will empty itself again and the `UniqueConnecFuture` will return an error.
     /// If the future is finished and `set_until` hasn't been called, then the `UniqueConnecFuture`
@@ -134,6 +134,7 @@ impl<T> UniqueConnec<T> {
     {
         match &*self.inner.lock() {
             UniqueConnecInner::Empty => (),
+            UniqueConnecInner::Errored(_) => (),
             _ => return UniqueConnecFuture { inner: Arc::downgrade(&self.inner) },
         };
 
@@ -141,14 +142,18 @@ impl<T> UniqueConnec<T> {
         let dial_fut = or().into_future();
 
         let mut inner = self.inner.lock();
+
         // Since we unlocked the mutex, it's possible that the object was filled in the meanwhile.
         // Therefore we check again whether it's still `Empty`.
-        if let UniqueConnecInner::Empty = &mut *inner {
-            *inner = UniqueConnecInner::Pending {
-                tasks_waiting: Vec::new(),
-                dial_fut: Box::new(dial_fut),
-            };
-        }
+        match &*inner {
+            UniqueConnecInner::Empty | UniqueConnecInner::Errored(_) => (),
+            _ => return UniqueConnecFuture { inner: Arc::downgrade(&self.inner) },
+        };
+    
+        *inner = UniqueConnecInner::Pending {
+            tasks_waiting: Vec::new(),
+            dial_fut: Box::new(dial_fut),
+        };
 
         UniqueConnecFuture { inner: Arc::downgrade(&self.inner) }
     }
