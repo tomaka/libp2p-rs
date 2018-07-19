@@ -178,9 +178,9 @@ impl<T> UniqueConnec<T> {
                 tasks_to_notify = tasks_waiting;
             },
             old @ UniqueConnecInner::Full { .. } => {
-                // Keep the old value.
+                // Keep the old value and drop `until` so that the new connection is closed.
                 *inner = old;
-                return future::Either::B(until);
+                return future::Either::B(future::ok(()));
             },
         };
         drop(inner);
