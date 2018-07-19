@@ -245,6 +245,8 @@ where F: FnMut(&PeerId) -> Fut + 'a,
         pending_nodes: Vec<PeerId>,
         // Peers that we tried to contact but failed.
         failed_to_contact: FnvHashSet<PeerId>,
+        // Local peer id, so that we avoid contacting ourselves.
+        local_peer_id: PeerId,
     }
 
     // General stage of the state.
@@ -268,6 +270,7 @@ where F: FnMut(&PeerId) -> Fut + 'a,
         current_attempts_addrs: SmallVec::new(),
         pending_nodes: kbuckets.find_closest(&searched_key).collect(),
         failed_to_contact: Default::default(),
+        local_peer_id: kbuckets.my_id().clone(),
     };
 
     // Start of the iterative process.
@@ -308,6 +311,9 @@ where F: FnMut(&PeerId) -> Fut + 'a,
                     continue;
                 }
                 if state.failed_to_contact.iter().any(|p| p == &peer) {
+                    continue;
+                }
+                if peer == state.local_peer_id {
                     continue;
                 }
                 to_contact.push(peer);
