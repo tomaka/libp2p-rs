@@ -98,6 +98,7 @@ impl Decoder for Codec {
                     debug_assert!(len == 0 || buf.len() < len);
                     let to_transfer = cmp::min(src.len(), len - buf.len());
 
+                    buf.reserve(to_transfer);
                     buf.put(src.split_to(to_transfer));    // TODO: more optimal?
 
                     if buf.len() < len {
