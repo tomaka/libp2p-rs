@@ -124,6 +124,9 @@ impl Transport for TcpConfig {
                             .expect("generating a multiaddr from a socket addr never fails");
                         debug!("Incoming connection from {}", addr);
                         future::ok((TcpTransStream { inner: sock }, future::ok(addr)))
+                    }).map_err(|err| {
+                        debug!("Error in TCP listener: {:?}", err);
+                        err
                     })
                 })
                 .flatten_stream();
@@ -139,7 +142,12 @@ impl Transport for TcpConfig {
     fn dial(self, addr: Multiaddr) -> Result<Self::Dial, (Self, Multiaddr)> {
         if let Ok(socket_addr) = multiaddr_to_socketaddr(&addr) {
             debug!("Dialing {}", addr);
-            let fut = TcpStream::connect(&socket_addr, &self.event_loop).map(|t| (TcpTransStream { inner: t }, future::ok(addr)));
+            let fut = TcpStream::connect(&socket_addr, &self.event_loop)
+                .map(|t| (TcpTransStream { inner: t }, future::ok(addr)))
+                .map_err(move |err| {
+                    debug!("Failed to dial {:?}", socket_addr);
+                    err
+                });
             Ok(Box::new(fut) as Box<_>)
         } else {
             Err((self, addr))
