@@ -18,12 +18,13 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+use fnv::FnvHashMap;
 use futures::{future, sync::oneshot, task, Async, Future, Poll, IntoFuture};
 use parking_lot::Mutex;
 use {Multiaddr, MuxedTransport, SwarmController, Transport};
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use std::mem;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, Weak, atomic::AtomicUsize, atomic::Ordering};
 
 /// Storage for a unique connection with a remote.
 pub struct UniqueConnec<T> {
@@ -36,7 +37,7 @@ enum UniqueConnecInner<T> {
     /// We started dialing, but no response has been obtained so far.
     Pending {
         /// Tasks that need to be awakened when the content of this object is set.
-        tasks_waiting: Vec<task::Task>,
+        tasks_waiting: FnvHashMap<usize, task::Task>,
         /// Future that represents when `set_until` should have been called.
         // TODO: Send + Sync bound is meh
         dial_fut: Box<Future<Item = (), Error = IoError> + Send + Sync>,
@@ -151,7 +152,7 @@ impl<T> UniqueConnec<T> {
         };
     
         *inner = UniqueConnecInner::Pending {
-            tasks_waiting: Vec::new(),
+            tasks_waiting: Default::default(),
             dial_fut: Box::new(dial_fut),
         };
 
@@ -167,7 +168,7 @@ impl<T> UniqueConnec<T> {
     pub fn set_until<F>(&self, value: T, until: F) -> impl Future<Item = (), Error = F::Error>
         where F: Future<Item = ()>
     {
-        let mut tasks_to_notify = Vec::new();
+        let mut tasks_to_notify = FnvHashMap::default();
 
         let mut inner = self.inner.lock();
         let (on_clear, on_clear_rx) = oneshot::channel();
@@ -187,7 +188,7 @@ impl<T> UniqueConnec<T> {
 
         // The mutex is unlocked when we notify the pending tasks.
         for task in tasks_to_notify {
-            task.notify();
+            task.1.notify();
         }
 
         let inner = self.inner.clone();
@@ -299,7 +300,11 @@ impl<T> Future for UniqueConnecFuture<T>
                         Err(IoErrorKind::ConnectionAborted.into())
                     },
                     Ok(Async::NotReady) => {
-                        tasks_waiting.push(task::current());
+                        static NEXT_TASK_ID: AtomicUsize = AtomicUsize::new(0);
+                        task_local! {
+                            static TASK_ID: usize = NEXT_TASK_ID.fetch_add(1, Ordering::Relaxed)
+                        }
+                        tasks_waiting.insert(TASK_ID.with(|&t| t), task::current());
                         *inner = UniqueConnecInner::Pending { tasks_waiting, dial_fut };
                         Ok(Async::NotReady)
                     }
