@@ -61,29 +61,29 @@ use upgrade::ConnectionUpgrade;
 ///
 /// Implements the `Transport` trait.
 #[derive(Clone)]
-pub struct ConnectionReuse<T, C>
+pub struct ConnectionReuse<T, C, D, M>
 where
     T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer,
 {
     /// Struct shared between most of the `ConnectionReuse` infrastructure.
-    shared: Arc<Mutex<Shared<T, C>>>,
+    shared: Arc<Mutex<Shared<T, C, D, M>>>,
 }
 
 /// Struct shared between most of the `ConnectionReuse` infrastructure.
-struct Shared<T, C>
+struct Shared<T, C, D, M>
 where
     T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer,
 {
     /// Underlying transport and connection upgrade, used when we need to dial or listen.
     transport: UpgradedNode<T, C>,
 
     /// All the connections that were opened, whether successful and/or active or not.
     // TODO: this will grow forever
-    connections: FnvHashMap<Multiaddr, PeerState<C::Output>>,
+    connections: FnvHashMap<Multiaddr, PeerState<D, M>>,
 
     /// Tasks to notify when one or more new elements were added to `connections`.
     notify_on_new_connec: FnvHashMap<usize, task::Task>,
@@ -95,11 +95,13 @@ where
     next_listener_id: u64,
 }
 
-enum PeerState<M> where M: StreamMuxer {
+enum PeerState<D, M> where M: StreamMuxer {
     /// Connection is active and can be used to open substreams.
     Active {
         /// The muxer to open new substreams.
         muxer: M,
+        /// Custom data passed to the output.
+        custom_data: D,
         /// Next incoming substream.
         next_incoming: M::InboundSubstream,
         /// Future of the address of the client.
@@ -117,7 +119,7 @@ enum PeerState<M> where M: StreamMuxer {
     // TODO: stronger Future type
     Pending {
         /// Future that produces the muxer.
-        future: Box<Future<Item = (M, Multiaddr), Error = IoError>>,
+        future: Box<Future<Item = ((D, M), Multiaddr), Error = IoError>>,
         /// All the tasks to notify when `future` resolves.
         notify: FnvHashMap<usize, task::Task>,
     },
@@ -130,14 +132,14 @@ enum PeerState<M> where M: StreamMuxer {
     Poisonned,
 }
 
-impl<T, C> From<UpgradedNode<T, C>> for ConnectionReuse<T, C>
+impl<T, C, D, M> ConnectionReuse<T, C, D, M>
 where
     T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer,
 {
     #[inline]
-    fn from(node: UpgradedNode<T, C>) -> ConnectionReuse<T, C> {
+    pub(crate) fn new(node: UpgradedNode<T, C>) -> ConnectionReuse<T, C, D, M> {
         ConnectionReuse {
             shared: Arc::new(Mutex::new(Shared {
                 transport: node,
@@ -150,21 +152,22 @@ where
     }
 }
 
-impl<T, C> Transport for ConnectionReuse<T, C>
+impl<T, C, D, M> Transport for ConnectionReuse<T, C, D, M>
 where
     T: Transport + 'static, // TODO: 'static :(
     T::Output: AsyncRead + AsyncWrite,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture> + Clone + 'static, // TODO: 'static :(
-    C::Output: StreamMuxer + Clone,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)> + Clone + 'static, // TODO: 'static :(
+    M: StreamMuxer + Clone + 'static,
+    D: Clone + 'static,
     C::MultiaddrFuture: Future<Item = Multiaddr, Error = IoError>,
     C::NamesIter: Clone,
     UpgradedNode<T, C>: Clone,
 {
-    type Output = ConnectionReuseSubstream<T, C>;
+    type Output = (D, ConnectionReuseSubstream<T, C, D, M>);
     type MultiaddrFuture = future::FutureResult<Multiaddr, IoError>;
     type Listener = Box<Stream<Item = Self::ListenerUpgrade, Error = IoError>>;
     type ListenerUpgrade = FutureResult<(Self::Output, Self::MultiaddrFuture), IoError>;
-    type Dial = ConnectionReuseDial<T, C>;
+    type Dial = ConnectionReuseDial<T, C, D, M>;
 
     fn listen_on(self, addr: Multiaddr) -> Result<(Self::Listener, Multiaddr), (Self, Multiaddr)> {
         let mut shared = self.shared.lock();
@@ -233,19 +236,20 @@ where
     }
 }
 
-impl<T, C> MuxedTransport for ConnectionReuse<T, C>
+impl<T, C, D, M> MuxedTransport for ConnectionReuse<T, C, D, M>
 where
     T: Transport + 'static, // TODO: 'static :(
     T::Output: AsyncRead + AsyncWrite,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture> + Clone + 'static, // TODO: 'static :(
-    C::Output: StreamMuxer + Clone,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)> + Clone + 'static, // TODO: 'static :(
+    M: StreamMuxer + Clone + 'static,
+    D: Clone + 'static,
     C::MultiaddrFuture: Future<Item = Multiaddr, Error = IoError>,
     C::NamesIter: Clone,
     UpgradedNode<T, C>: Clone,
 {
-    type Incoming = ConnectionReuseIncoming<T, C>;
+    type Incoming = ConnectionReuseIncoming<T, C, D, M>;
     type IncomingUpgrade =
-        future::FutureResult<(ConnectionReuseSubstream<T,C>, Self::MultiaddrFuture), IoError>;
+        future::FutureResult<((D, ConnectionReuseSubstream<T, C, D, M>), Self::MultiaddrFuture), IoError>;
 
     #[inline]
     fn next_incoming(self) -> Self::Incoming {
@@ -262,48 +266,49 @@ task_local!{
 }
 
 /// Implementation of `Future` for dialing a node.
-pub struct ConnectionReuseDial<T, C>
+pub struct ConnectionReuseDial<T, C, D, M>
 where 
     T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer,
 {
     /// The future that will construct the substream, the connection id the muxer comes from, and
     /// the `Future` of the client's multiaddr.
     /// If `None`, we need to grab a new outbound substream from the muxer.
-    outbound: Option<ConnectionReuseDialOut<T, C>>,
+    outbound: Option<ConnectionReuseDialOut<D, M>>,
 
     // Shared between the whole connection reuse mechanism.
-    shared: Arc<Mutex<Shared<T, C>>>,
+    shared: Arc<Mutex<Shared<T, C, D, M>>>,
 
     // The address we're trying to dial.
     addr: Multiaddr,
 }
 
-struct ConnectionReuseDialOut<T, C>
+struct ConnectionReuseDialOut<D, M>
 where 
-    T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer,
+    M: StreamMuxer,
 {
+    /// Custom data for the connection.
+    custom_data: D,
     /// The pending outbound substream.
-    stream: <C::Output as StreamMuxer>::OutboundSubstream,
+    stream: M::OutboundSubstream,
     /// Id of the connection that was used to create the substream.
     connection_id: u64,
     /// Address of the remote.
     client_addr: Multiaddr,
 }
 
-impl<T, C> Future for ConnectionReuseDial<T, C>
+impl<T, C, D, M> Future for ConnectionReuseDial<T, C, D, M>
 where 
     T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer + Clone + 'static,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer + Clone + 'static,
+    D: Clone + 'static,
     UpgradedNode<T, C>: Transport<Output = C::Output> + Clone,
     <UpgradedNode<T, C> as Transport>::Dial: 'static,
     <UpgradedNode<T, C> as Transport>::MultiaddrFuture: 'static,
 {
-    type Item = (ConnectionReuseSubstream<T, C>, FutureResult<Multiaddr, IoError>);
+    type Item = ((D, ConnectionReuseSubstream<T, C, D, M>), FutureResult<Multiaddr, IoError>);
     type Error = IoError;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -319,7 +324,7 @@ where
                             inner,
                             addr: outbound.client_addr.clone(),
                         };
-                        return Ok(Async::Ready((substream, future::ok(outbound.client_addr))));
+                        return Ok(Async::Ready(((outbound.custom_data, substream), future::ok(outbound.client_addr))));
                     },
                     Ok(Async::NotReady) => {
                         self.outbound = Some(outbound);
@@ -380,12 +385,13 @@ where
             };
 
             match mem::replace(&mut *connec, PeerState::Poisonned) {
-                PeerState::Active { muxer, next_incoming, connection_id, listener_id, mut num_substreams, client_addr } => {
+                PeerState::Active { muxer, custom_data, next_incoming, connection_id, listener_id, mut num_substreams, client_addr } => {
                     let outbound = muxer.clone().outbound();
                     num_substreams += 1;
-                    *connec = PeerState::Active { muxer, next_incoming, connection_id, listener_id, num_substreams, client_addr: client_addr.clone() };
+                    *connec = PeerState::Active { muxer, custom_data: custom_data.clone(), next_incoming, connection_id, listener_id, num_substreams, client_addr: client_addr.clone() };
                     trace!("Using existing connection to {} to open outbound substream", self.addr);
                     self.outbound = Some(ConnectionReuseDialOut {
+                        custom_data,
                         stream: outbound,
                         connection_id,
                         client_addr,
@@ -393,7 +399,7 @@ where
                 },
                 PeerState::Pending { mut future, mut notify } => {
                     match future.poll() {
-                        Ok(Async::Ready((muxer, client_addr))) => {
+                        Ok(Async::Ready(((custom_data, muxer), client_addr))) => {
                             trace!("Successful new connection to {} ({})", self.addr, client_addr);
                             for task in notify {
                                 task.1.notify();
@@ -402,8 +408,9 @@ where
                             let first_outbound = muxer.clone().outbound();
                             let connection_id = shared.next_connection_id;
                             shared.next_connection_id += 1;
-                            *connec = PeerState::Active { muxer, next_incoming, connection_id, num_substreams: 1, listener_id: None, client_addr: client_addr.clone() };
+                            *connec = PeerState::Active { muxer, custom_data: custom_data.clone(), next_incoming, connection_id, num_substreams: 1, listener_id: None, client_addr: client_addr.clone() };
                             self.outbound = Some(ConnectionReuseDialOut {
+                                custom_data,
                                 stream: first_outbound,
                                 connection_id,
                                 client_addr,
@@ -436,11 +443,11 @@ where
     }
 }
 
-impl<T, C> Drop for ConnectionReuseDial<T, C>
+impl<T, C, D, M> Drop for ConnectionReuseDial<T, C, D, M>
 where 
     T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer,
 {
     fn drop(&mut self) {
         if let Some(outbound) = self.outbound.take() {
@@ -451,11 +458,11 @@ where
 }
 
 /// Implementation of `Stream` for the connections incoming from listening on a specific address.
-pub struct ConnectionReuseListener<T, C, L>
+pub struct ConnectionReuseListener<T, C, D, M, L>
 where
     T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer,
 {
     /// The main listener.
     listener: stream::Fuse<L>,
@@ -465,19 +472,20 @@ where
     current_upgrades: FuturesUnordered<Box<Future<Item = (C::Output, Multiaddr), Error = IoError>>>,
 
     /// Shared between the whole connection reuse mechanism.
-    shared: Arc<Mutex<Shared<T, C>>>,
+    shared: Arc<Mutex<Shared<T, C, D, M>>>,
 }
 
-impl<T, C, L, Lu> Stream for ConnectionReuseListener<T, C, L>
+impl<T, C, D, M, L, Lu> Stream for ConnectionReuseListener<T, C, D, M, L>
 where
     T: Transport,
     T::Output: AsyncRead + AsyncWrite,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer + Clone,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer + Clone,
+    D: Clone,
     L: Stream<Item = Lu, Error = IoError>,
     Lu: Future<Item = (C::Output, Multiaddr), Error = IoError> + 'static,
 {
-    type Item = FutureResult<(ConnectionReuseSubstream<T, C>, FutureResult<Multiaddr, IoError>), IoError>;
+    type Item = FutureResult<((D, ConnectionReuseSubstream<T, C, D, M>), FutureResult<Multiaddr, IoError>), IoError>;
     type Error = IoError;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
@@ -505,14 +513,14 @@ where
         // Process the connections being upgraded.
         loop {
             match self.current_upgrades.poll() {
-                Ok(Async::Ready(Some((muxer, client_addr)))) => {
+                Ok(Async::Ready(Some(((custom_data, muxer), client_addr)))) => {
                     // Successfully upgraded a new incoming connection.
                     trace!("New multiplexed connection from {}", client_addr);
                     let mut shared = self.shared.lock();
                     let next_incoming = muxer.clone().inbound();
                     let connection_id = shared.next_connection_id;
                     shared.next_connection_id += 1;
-                    let state = PeerState::Active { muxer, next_incoming, connection_id, listener_id: Some(self.listener_id), num_substreams: 1, client_addr: client_addr.clone() };
+                    let state = PeerState::Active { muxer, custom_data, next_incoming, connection_id, listener_id: Some(self.listener_id), num_substreams: 1, client_addr: client_addr.clone() };
                     shared.connections.insert(client_addr, state);
                     for to_notify in shared.notify_on_new_connec.drain() {
                         to_notify.1.notify();
@@ -553,23 +561,24 @@ where
 }
 
 /// Implementation of `Future` that yields the next incoming substream from a dialed connection.
-pub struct ConnectionReuseIncoming<T, C>
+pub struct ConnectionReuseIncoming<T, C, D, M>
 where
     T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer,
 {
     // Shared between the whole connection reuse system.
-    shared: Arc<Mutex<Shared<T, C>>>,
+    shared: Arc<Mutex<Shared<T, C, D, M>>>,
 }
 
-impl<T, C> Future for ConnectionReuseIncoming<T, C>
+impl<T, C, D, M> Future for ConnectionReuseIncoming<T, C, D, M>
 where
     T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer + Clone,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer + Clone,
+    D: Clone,
 {
-    type Item = future::FutureResult<(ConnectionReuseSubstream<T, C>, future::FutureResult<Multiaddr, IoError>), IoError>;
+    type Item = future::FutureResult<((D, ConnectionReuseSubstream<T, C, D, M>), future::FutureResult<Multiaddr, IoError>), IoError>;
     type Error = IoError;
 
     #[inline]
@@ -593,12 +602,13 @@ where
 ///
 /// Returns `Ready(None)` if no connection is matching the `listener`. Returns `NotReady` if
 /// one or more connections are matching the `listener` but they are not ready.
-fn poll_incoming<T, C>(shared_arc: &Arc<Mutex<Shared<T, C>>>, shared: &mut Shared<T, C>, listener: Option<u64>)
-    -> Poll<Option<FutureResult<(ConnectionReuseSubstream<T, C>, FutureResult<Multiaddr, IoError>), IoError>>, IoError>
+fn poll_incoming<T, C, D, M>(shared_arc: &Arc<Mutex<Shared<T, C, D, M>>>, shared: &mut Shared<T, C, D, M>, listener: Option<u64>)
+    -> Poll<Option<FutureResult<((D, ConnectionReuseSubstream<T, C, D, M>), FutureResult<Multiaddr, IoError>), IoError>>, IoError>
 where
     T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer + Clone,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer + Clone,
+    D: Clone,
 {
     // Keys of the elements in `shared.connections` to remove afterwards.
     let mut to_remove = Vec::new();
@@ -608,7 +618,7 @@ where
 
     for (addr, state) in shared.connections.iter_mut() {
         match *state {
-            PeerState::Active { ref mut next_incoming, ref muxer, ref mut num_substreams, connection_id, ref client_addr, listener_id } => {
+            PeerState::Active { ref custom_data, ref mut next_incoming, ref muxer, ref mut num_substreams, connection_id, ref client_addr, listener_id } => {
                 if listener_id != listener {
                     continue;
                 }
@@ -626,7 +636,7 @@ where
                             connection_id,
                             addr: client_addr.clone(),
                         };
-                        ret_value = Some(Ok((substream, future::ok(client_addr.clone()))));
+                        ret_value = Some(Ok(((custom_data.clone(), substream), future::ok(client_addr.clone()))));
                         break;
                     },
                     Ok(Async::Ready(None)) => {
@@ -674,11 +684,11 @@ where
 }
 
 /// Removes one substream from an active connection. Closes the connection if necessary.
-fn remove_one_substream<T, C>(shared: &mut Shared<T, C>, connec_id: u64, addr: &Multiaddr)
+fn remove_one_substream<T, C, D, M>(shared: &mut Shared<T, C, D, M>, connec_id: u64, addr: &Multiaddr)
 where
     T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer,
 {
     shared.connections.retain(|_, connec| {
         if let PeerState::Active { connection_id, ref mut num_substreams, .. } = connec {
@@ -696,27 +706,27 @@ where
 }
 
 /// Wraps around the `Substream`.
-pub struct ConnectionReuseSubstream<T, C>
+pub struct ConnectionReuseSubstream<T, C, D, M>
 where
     T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer,
 {
-    inner: <C::Output as StreamMuxer>::Substream,
-    shared: Arc<Mutex<Shared<T, C>>>,
+    inner: M::Substream,
+    shared: Arc<Mutex<Shared<T, C, D, M>>>,
     /// Id this connection was created from.
     connection_id: u64,
     /// Address of the remote.
     addr: Multiaddr,
 }
 
-impl<T, C> Deref for ConnectionReuseSubstream<T, C>
+impl<T, C, D, M> Deref for ConnectionReuseSubstream<T, C, D, M>
 where
     T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer,
 {
-    type Target = <C::Output as StreamMuxer>::Substream;
+    type Target = M::Substream;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
@@ -724,11 +734,11 @@ where
     }
 }
 
-impl<T, C> DerefMut for ConnectionReuseSubstream<T, C>
+impl<T, C, D, M> DerefMut for ConnectionReuseSubstream<T, C, D, M>
 where
     T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer,
 {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
@@ -736,11 +746,11 @@ where
     }
 }
 
-impl<T, C> Read for ConnectionReuseSubstream<T, C>
+impl<T, C, D, M> Read for ConnectionReuseSubstream<T, C, D, M>
 where
     T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer,
 {
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, IoError> {
@@ -748,19 +758,19 @@ where
     }
 }
 
-impl<T, C> AsyncRead for ConnectionReuseSubstream<T, C>
+impl<T, C, D, M> AsyncRead for ConnectionReuseSubstream<T, C, D, M>
 where
     T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer,
 {
 }
 
-impl<T, C> Write for ConnectionReuseSubstream<T, C>
+impl<T, C, D, M> Write for ConnectionReuseSubstream<T, C, D, M>
 where
     T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer,
 {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> Result<usize, IoError> {
@@ -773,11 +783,11 @@ where
     }
 }
 
-impl<T, C> AsyncWrite for ConnectionReuseSubstream<T, C>
+impl<T, C, D, M> AsyncWrite for ConnectionReuseSubstream<T, C, D, M>
 where
     T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer,
 {
     #[inline]
     fn shutdown(&mut self) -> Poll<(), IoError> {
@@ -785,11 +795,11 @@ where
     }
 }
 
-impl<T, C> Drop for ConnectionReuseSubstream<T, C>
+impl<T, C, D, M> Drop for ConnectionReuseSubstream<T, C, D, M>
 where
     T: Transport,
-    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture>,
-    C::Output: StreamMuxer,
+    C: ConnectionUpgrade<T::Output, T::MultiaddrFuture, Output = (D, M)>,
+    M: StreamMuxer,
 {
     fn drop(&mut self) {
         let mut shared = self.shared.lock();
