@@ -46,7 +46,7 @@ use futures::sync::mpsc;
 use futures::{future, Future, Poll, Sink, Stream};
 use libp2p_core::{ConnectionUpgrade, Endpoint, PeerId};
 use log::Level;
-use multiaddr::{AddrComponent, Multiaddr, ToCid};
+use multiaddr::{AddrComponent, Multiaddr};
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 use protobuf::Message as ProtobufMessage;
 use smallvec::SmallVec;
@@ -592,16 +592,7 @@ fn handle_packet_received(
                    publish.get_data().len());
             continue;
         }
-
-        let cid = match from.to_cid() {
-            Ok(cid) => cid,
-            Err(err) => {
-                trace!("Parsing Cid failed: {}. Skipping.", err);
-                continue
-            }
-        };
-
-        let from: Multiaddr = AddrComponent::P2P(cid).into();
+        let from: Multiaddr = AddrComponent::P2P(from).into();
 
         let topics = publish
             .take_topicIDs()
