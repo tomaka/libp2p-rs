@@ -47,7 +47,7 @@ use tokio_io::{AsyncRead, AsyncWrite};
 // Maximum number of simultaneously-open substreams.
 const MAX_SUBSTREAMS: usize = 1024;
 // Maximum number of elements in the internal buffer.
-const MAX_BUFFER_LEN: usize = 1024;
+const MAX_BUFFER_LEN: usize = 4096;
 
 /// Configuration for the multiplexer.
 #[derive(Debug, Clone, Default)]
