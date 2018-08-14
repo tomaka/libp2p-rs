@@ -132,3 +132,21 @@ impl Transport for CommonTransport {
         self.inner.inner.nat_traversal(server, observed)
     }
 }
+
+/// The `multiaddr!` macro is an easy one for a user to create a `Multiaddr`.
+#[macro_export]
+macro_rules! multiaddr {
+    ($($comp:ident $(($param:expr))*),+) => {
+        {
+            use std::iter;
+            let elem = iter::empty::<$crate::multiaddr::AddrComponent>();
+            $(
+                let elem = {
+                    let cmp = $crate::multiaddr::AddrComponent::$comp $(( $param.into() ))*;
+                    elem.chain(iter::once(cmp))
+                };
+            )+
+            elem.collect::<$crate::Multiaddr>()
+        }
+    }
+}
