@@ -46,8 +46,6 @@ use tokio_io::{AsyncRead, AsyncWrite};
 
 // Maximum number of simultaneously-open substreams.
 const MAX_SUBSTREAMS: usize = 1024;
-// Maximum number of elements in the internal buffer.
-const MAX_BUFFER_LEN: usize = 1024;
 
 /// Configuration for the multiplexer.
 #[derive(Debug, Clone, Default)]
@@ -181,15 +179,6 @@ where C: AsyncRead + AsyncWrite,
             if let Some(out) = filter(&elem) {
                 return Ok(Async::Ready(Some(out)));
             } else {
-                if inner.buffer.len() >= MAX_BUFFER_LEN {
-                    debug!("Reached mplex maximum buffer length");
-                    inner.error = Err(IoError::new(IoErrorKind::Other, "reached maximum buffer length"));
-                    for task in inner.to_notify.drain() {
-                        task.1.notify();
-                    }
-                    return Err(IoError::new(IoErrorKind::Other, "reached maximum buffer length"));
-                }
-
                 if inner.opened_substreams.contains(&elem.substream_id()) || elem.is_open_msg() {
                     inner.buffer.push(elem);
                     for task in inner.to_notify.drain() {
