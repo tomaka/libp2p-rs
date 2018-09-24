@@ -20,8 +20,9 @@
 
 use muxing::StreamMuxer;
 use nodes::node::{NodeEvent, NodeStream, Substream};
-use futures::prelude::*;
+use futures::{prelude::*, task};
 use std::io::Error as IoError;
+use std::marker::PhantomData;
 
 /// Handler for the substreams of a node.
 ///
@@ -109,6 +110,55 @@ impl<TOutboundOpenInfo, TCustom> NodeHandlerEvent<TOutboundOpenInfo, TCustom> {
                 NodeHandlerEvent::OutboundSubstreamRequest(val)
             },
             NodeHandlerEvent::Custom(val) => NodeHandlerEvent::Custom(map(val)),
+        }
+    }
+}
+
+/// Implementation of `NodeHandler` that doesn't do anything, except shutdown when necessary.
+pub struct IdleHandler<TInEvent, TOutEvent> {
+    shutdown: bool,
+    to_notify: Option<task::Task>,
+    marker: PhantomData<(TInEvent, TOutEvent)>,
+}
+
+impl<TInEvent, TOutEvent> Default for IdleHandler<TInEvent, TOutEvent> {
+    #[inline]
+    fn default() -> Self {
+        IdleHandler {
+            shutdown: false,
+            to_notify: None,
+            marker: PhantomData,
+        }
+    }
+}
+
+/// Handler for the substreams of a node.
+///
+/// > Note: When implementing the various methods, don't forget that you have to register the
+/// > task that was the latest to poll and notify it.
+// TODO: right now it is possible for a node handler to be built, then shut down right after if we
+//       realize we dialed the wrong peer for example ; this could be surprising and should either
+//       be documented or changed (favouring the "documented" right now)
+impl<TSubstream, TInEvent, TOutEvent> NodeHandler<TSubstream> for IdleHandler<TInEvent, TOutEvent> {
+    type InEvent = TInEvent;
+    type OutEvent = TOutEvent;
+    type OutboundOpenInfo = ();
+    fn inject_substream(&mut self, _: TSubstream, _: NodeHandlerEndpoint<()>) {}
+    fn inject_inbound_closed(&mut self) {}
+    fn inject_outbound_closed(&mut self, _: ()) {}
+    fn inject_event(&mut self, _: Self::InEvent) {}
+    fn shutdown(&mut self) {
+        self.shutdown = true;
+        if let Some(task) = self.to_notify.take() {
+            task.notify();
+        }
+    }
+    fn poll(&mut self) -> Poll<Option<NodeHandlerEvent<(), TOutEvent>>, IoError> {
+        if self.shutdown {
+            Ok(Async::Ready(None))
+        } else {
+            self.to_notify = Some(task::current());
+            Ok(Async::NotReady)
         }
     }
 }
