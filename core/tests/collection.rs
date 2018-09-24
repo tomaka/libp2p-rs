@@ -64,7 +64,7 @@ fn collection_basic_working() {
     let dialer_peer_id2 = dialer_peer_id.clone();
     let dialer_stream = stream::poll_fn(move || -> Poll<Option<()>, ()> {
         loop {
-            {
+            let should_close = {
                 let event = match collec.poll() {
                     Async::Ready(ev) => ev,
                     Async::NotReady => return Ok(Async::NotReady),
@@ -73,19 +73,29 @@ fn collection_basic_working() {
                 match event {
                     Some(CollectionEvent::NodeReached(node)) => {
                         assert_eq!(node.reach_attempt_id(), reach_id);
+                        assert!(!node.would_replace());
                         let (accept, peer_id) = node.accept();
                         assert_eq!(accept, CollectionNodeAccept::NewEntry);
                         assert_eq!(peer_id, listener_peer_id);
+                        false
                     },
-                    Some(CollectionEvent::NodeClosed { .. }) => return Ok(Async::Ready(None)),
+                    Some(CollectionEvent::NodeClosed { .. }) => true,
                     Some(CollectionEvent::NodeError { .. }) => panic!(),
                     Some(CollectionEvent::ReachError { .. }) => panic!(),
                     Some(CollectionEvent::NodeEvent { .. }) => panic!(),
                     None => panic!(),
                 }
-            }
+            };
 
-            let _ = collec.peer_mut(&dialer_peer_id2).unwrap();
+            if should_close {
+                assert!(collec.peer_mut(&dialer_peer_id2).is_none());
+                assert!(!collec.has_connection(&dialer_peer_id2));
+                assert_eq!(collec.connections().count(), 0);
+            } else {
+                assert!(collec.has_connection(&dialer_peer_id2));
+                let _ = collec.peer_mut(&dialer_peer_id2).unwrap();
+                assert!(collec.connections().cloned().collect::<Vec<_>>(), vec![dialer_peer_id2.clone()]);
+            }
         }
     });
 
@@ -109,3 +119,11 @@ fn collection_basic_working() {
     let final_future = dialer_future.select(listener_future).map(|((), _)| ()).map_err(|_| ());
     tokio::run(final_future);
 }
+
+// TODO:
+// - replace existing peer
+// - deny peer
+// - interrupt attempt
+// - broadcast event
+// - close peer
+// - send event to peer
