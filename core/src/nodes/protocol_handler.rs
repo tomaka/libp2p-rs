@@ -20,10 +20,10 @@
 
 use either::EitherOutput;
 use futures::prelude::*;
-use nodes::handled_node::{NodeHandler, NodeHandlerEndpoint, NodeHandlerEvent};
+use nodes::handled_node::{NodeHandlerEndpoint, NodeHandlerEvent};
 use std::io::Error as IoError;
 use tokio_io::{AsyncRead, AsyncWrite};
-use upgrade::{choice::OrUpgrade, map::Map as UpgradeMap};
+use upgrade::{self, choice::OrUpgrade, map::Map as UpgradeMap};
 use ConnectionUpgrade;
 
 /// Handler for a protocol.
@@ -37,6 +37,9 @@ pub trait ProtocolHandler<TSubstream> {
     /// Information about a substream. Can be sent to the handler through a `NodeHandlerEndpoint`,
     /// and will be passed back in `inject_substream` or `inject_outbound_closed`.
     type OutboundOpenInfo;
+
+    /// Produces a `ConnecitonUpgrade` for this protocol.
+    fn protocol(&self) -> Self::Protocol;
 
     /// Injects a fully-negotiated substream in the handler.
     fn inject_fully_negotiated(&mut self, protocol: <Self::Protocol as ConnectionUpgrade<TSubstream>>::Output, endpoint: NodeHandlerEndpoint<Self::OutboundOpenInfo>);
@@ -253,6 +256,13 @@ where TProto1: ProtocolHandler<TSubstream>,
     type OutEvent = Either<TProto1::OutEvent, TProto2::OutEvent>;
     type Protocol = OrUpgrade<UpgradeMap<TProto1::Protocol, fn(TProto1Out) -> EitherOutput<TProto1Out, TProto2Out>>, UpgradeMap<TProto2::Protocol, fn(TProto2Out) -> EitherOutput<TProto1Out, TProto2Out>>>;
     type OutboundOpenInfo = Either<TProto1::OutboundOpenInfo, TProto2::OutboundOpenInfo>;
+
+    #[inline]
+    fn protocol(&self) -> Self::Protocol {
+        let proto1 = upgrade::map::<_, fn(_) -> _>(self.proto1.protocol(), EitherOutput::First);
+        let proto2 = upgrade::map::<_, fn(_) -> _>(self.proto2.protocol(), EitherOutput::Second);
+        upgrade::or(proto1, proto2)
+    }
 
     fn inject_fully_negotiated(&mut self, protocol: <Self::Protocol as ConnectionUpgrade<TSubstream>>::Output, endpoint: NodeHandlerEndpoint<Self::OutboundOpenInfo>) {
         match (protocol, endpoint) {
