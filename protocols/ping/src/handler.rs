@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use futures::prelude::*;
+use futures::{prelude::*, task};
 use libp2p_core::{ConnectionUpgrade, nodes::protocol_handler::ProtocolHandler};
 use libp2p_core::nodes::handled_node::{NodeHandlerEvent, NodeHandlerEndpoint};
 use std::io;
@@ -51,6 +51,9 @@ pub struct PeriodicPingHandler<TSubstream> {
     ///
     /// Every time we receive a pong, we reset the timer to the next time.
     next_ping: Delay,
+
+    /// Task to notify when we need to be re-polled.
+    to_notify: Option<task::Task>,
 }
 
 /// Event produced by the periodic pinger.
@@ -75,6 +78,7 @@ impl<TSubstream> PeriodicPingHandler<TSubstream> {
             active_ping_out: None,
             next_ping: Delay::new(Instant::now() + DELAY_TO_FIRST_PING),
             upgrading: false,
+            to_notify: None,
         }
     }
 }
@@ -115,6 +119,14 @@ where TSubstream: AsyncRead + AsyncWrite,
     fn inject_inbound_closed(&mut self) {
     }
 
+    #[inline]
+    fn inject_dial_upgrade_error(&mut self, _: Self::OutboundOpenInfo, _: &io::Error) {
+        // We notify the task in order to try reopen a substream.
+        if let Some(to_notify) = self.to_notify.take() {
+            to_notify.notify()
+        }
+    }
+
     fn shutdown(&mut self) {
         if let Some(ping_out_substream) = self.ping_out_substream.as_mut() {
             ping_out_substream.shutdown();
@@ -128,8 +140,10 @@ where TSubstream: AsyncRead + AsyncWrite,
     fn poll(&mut self) -> Poll<Option<NodeHandlerEvent<Self::OutboundOpenInfo, Self::OutEvent>>, io::Error> {
         // Open a ping substream if necessary.
         if self.ping_out_substream.is_none() && !self.upgrading {
-            let future = Delay::new(Instant::now() + PING_TIMEOUT);
-            self.active_ping_out = Some(future);
+            if self.active_ping_out.is_none() {
+                let future = Delay::new(Instant::now() + PING_TIMEOUT);
+                self.active_ping_out = Some(future);
+            }
             self.upgrading = true;
             return Ok(Async::Ready(Some(NodeHandlerEvent::OutboundSubstreamRequest(()))));
         }

@@ -19,12 +19,12 @@
 // DEALINGS IN THE SOFTWARE.
 
 use either::EitherOutput;
-use futures::prelude::*;
-use nodes::handled_node::{NodeHandlerEndpoint, NodeHandlerEvent};
-use std::io::Error as IoError;
+use futures::{prelude::*, task};
+use nodes::handled_node::{NodeHandler, NodeHandlerEndpoint, NodeHandlerEvent};
+use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use tokio_io::{AsyncRead, AsyncWrite};
-use upgrade::{self, choice::OrUpgrade, map::Map as UpgradeMap};
-use ConnectionUpgrade;
+use upgrade::{self, apply::UpgradeApplyFuture, choice::OrUpgrade, map::Map as UpgradeMap};
+use {ConnectionUpgrade, Endpoint};
 
 /// Handler for a protocol.
 pub trait ProtocolHandler<TSubstream> {
@@ -47,6 +47,9 @@ pub trait ProtocolHandler<TSubstream> {
     /// Injects an event coming from the outside in the handler.
     fn inject_event(&mut self, event: Self::InEvent);
 
+    /// Indicates to the handler that upgrading a substream to the given protocol has failed.
+    fn inject_dial_upgrade_error(&mut self, info: Self::OutboundOpenInfo, error: &IoError);
+
     /// Indicates the handler that the inbound part of the muxer has been closed, and that
     /// therefore no more inbound substream will be produced.
     fn inject_inbound_closed(&mut self);
@@ -62,97 +65,76 @@ pub trait ProtocolHandler<TSubstream> {
     /// node should be closed.
     fn poll(&mut self) -> Poll<Option<NodeHandlerEvent<Self::OutboundOpenInfo, Self::OutEvent>>, IoError>;
 
-    /*/// Builds a `NodeHandlerWrapper`.
+    /// Builds a `NodeHandlerWrapper`.
     #[inline]
-    fn into_node_handler(self) -> NodeHandlerWrapper<Self>
-    where Self: Sized
+    fn into_node_handler(self) -> NodeHandlerWrapper<TSubstream, Self>
+    where Self: Sized,
+          TSubstream: AsyncRead + AsyncWrite,
     {
         NodeHandlerWrapper {
             handler: self,
             negotiating_in: Vec::new(),
             negotiating_out: Vec::new(),
+            queued_dial_upgrades: Vec::new(),
+            to_notify: None,
         }
-    }*/
+    }
 }
 
-/*pub struct NodeHandlerWrapper<TProtoHandler> {
+/// Wraps around an implementation of `ProtocolHandler`, and implements `NodeHandler`.
+pub struct NodeHandlerWrapper<TSubstream, TProtoHandler>
+where TProtoHandler: ProtocolHandler<TSubstream>,
+      TSubstream: AsyncRead + AsyncWrite,
+{
     handler: TProtoHandler,
-    negotiating_in: Vec<???>,
-    negotiating_out: Vec<???>,
+    queued_dial_upgrades: Vec<TProtoHandler::OutboundOpenInfo>,
+    negotiating_in: Vec<UpgradeApplyFuture<TSubstream, TProtoHandler::Protocol>>,
+    negotiating_out: Vec<(TProtoHandler::OutboundOpenInfo, UpgradeApplyFuture<TSubstream, TProtoHandler::Protocol>)>,
+    to_notify: Option<task::Task>,
 }
 
-impl<TProtoHandler> NodeHandler<TProtoHandler> for NodeHandlerWrapper<TProtoHandler>
-where TProtoHandler: ProtocolHandler
+impl<TSubstream, TProtoHandler> NodeHandler<TSubstream> for NodeHandlerWrapper<TSubstream, TProtoHandler>
+where TProtoHandler: ProtocolHandler<TSubstream>,
+      //TProtoHandler::Protocol: Clone,
+      <TProtoHandler::Protocol as ConnectionUpgrade<TSubstream>>::NamesIter: Clone,
+      TSubstream: AsyncRead + AsyncWrite,
 {
     type InEvent = TProtoHandler::InEvent;
     type OutEvent = TProtoHandler::OutEvent;
     type OutboundOpenInfo = TProtoHandler::OutboundOpenInfo;
 
     fn inject_substream(&mut self, substream: TSubstream, endpoint: NodeHandlerEndpoint<Self::OutboundOpenInfo>) {
-		// For listeners, propose all the possible upgrades.
-		if endpoint == NodeHandlerEndpoint::Listener {
-			let listener_upgrade = listener_upgrade!(self);
-			let upgrade = upgrade::apply(substream, listener_upgrade, Endpoint::Listener, &self.address);
-			self.negotiating.push(Box::new(upgrade) as Box<_>);
-			// Since we pushed to `upgrades_in_progress_listen`, we have to notify the task.
-			if let Some(task) = self.to_notify.take() {
-				task.notify();
-			}
-			return;
-		}
+        let addr = "/ip4/1.2.3.4/tcp/5".parse().unwrap();
+        // FIXME: ^
 
-		// If we're the dialer, we have to decide which upgrade we want.
-		let purpose = if self.queued_dial_upgrades.is_empty() {
-			// Since we sometimes remove elements from `queued_dial_upgrades` before they succeed
-			// but after the outbound substream has started opening, it is possible that the queue
-			// is empty when we receive a substream. This is not an error.
-			// Example: we want to open a Kademlia substream, we start opening one, but in the
-			// meanwhile the remote opens a Kademlia substream. When we receive the new substream,
-			// we don't need it anymore.
-			return;
-		} else {
-			self.queued_dial_upgrades.remove(0)
-		};
+        // For listeners, propose all the possible upgrades.
+        if let NodeHandlerEndpoint::Listener = endpoint {
+            let protocol = self.handler.protocol();
+            let upgrade = upgrade::apply(substream, self.handler.protocol(), Endpoint::Listener, &addr);
+            self.negotiating_in.push(upgrade);
+            return;
+        }
 
-		match purpose {
-			UpgradePurpose::Custom(id) => {
-				let wanted = if let Some(proto) = self.registered_custom.find_protocol(id) {
-					// TODO: meh for cloning
-					upgrade::map(proto.clone(), move |c| FinalUpgrade::Custom(c))
-				} else {
-					error!(target: "sub-libp2p", "Logic error: wrong custom protocol id for \
-						opened substream");
-					return;
-				};
+        // If we're the dialer, we have to decide which upgrade we want.
+        let purpose = if self.queued_dial_upgrades.is_empty() {
+            // Since we sometimes remove elements from `queued_dial_upgrades` before they succeed
+            // but after the outbound substream has started opening, it is possible that the queue
+            // is empty when we receive a substream. This is not an error.
+            // Example: we want to open a Kademlia substream, we start opening one, but in the
+            // meanwhile the remote opens a Kademlia substream. When we receive the new substream,
+            // we don't need it anymore.
+            return;
+        } else {
+            self.queued_dial_upgrades.remove(0)
+        };
 
-				// TODO: shouldn't be &self.address ; requires a change in libp2p
-				let upgrade = upgrade::apply(substream, wanted, Endpoint::Dialer, &self.address);
-				self.upgrades_in_progress_dial.push((purpose, Box::new(upgrade) as Box<_>));
-			}
-			UpgradePurpose::Kad => {
-				let wanted = upgrade::map(KadConnecConfig::new(), move |(c, s)| FinalUpgrade::Kad(c, s));
-				// TODO: shouldn't be &self.address ; requires a change in libp2p
-				let upgrade = upgrade::apply(substream, wanted, Endpoint::Dialer, &self.address);
-				self.upgrades_in_progress_dial.push((purpose, Box::new(upgrade) as Box<_>));
-			}
-			UpgradePurpose::Identify => {
-				let wanted = upgrade::map(identify::IdentifyProtocolConfig, move |i| FinalUpgrade::from(i));
-				// TODO: shouldn't be &self.address ; requires a change in libp2p
-				let upgrade = upgrade::apply(substream, wanted, Endpoint::Dialer, &self.address);
-				self.upgrades_in_progress_dial.push((purpose, Box::new(upgrade) as Box<_>));
-			}
-			UpgradePurpose::Ping => {
-				let wanted = upgrade::map(ping::Ping::default(), move |p| FinalUpgrade::from(p));
-				// TODO: shouldn't be &self.address ; requires a change in libp2p
-				let upgrade = upgrade::apply(substream, wanted, Endpoint::Dialer, &self.address);
-				self.upgrades_in_progress_dial.push((purpose, Box::new(upgrade) as Box<_>));
-			}
-		};
+        let upgrade = upgrade::apply(substream, self.handler.protocol(), Endpoint::Listener, &addr);
+        self.negotiating_in.push(upgrade);
 
-		// Since we pushed to `upgrades_in_progress_dial`, we have to notify the task.
-		if let Some(task) = self.to_notify.take() {
-			task.notify();
-		}
+        // Since we pushed to `upgrades_in_progress_dial`, we have to notify the task.
+        if let Some(task) = self.to_notify.take() {
+            task.notify();
+        }
     }
 
     #[inline]
@@ -161,7 +143,6 @@ where TProtoHandler: ProtocolHandler
     }
 
     fn inject_outbound_closed(&mut self, user_data: Self::OutboundOpenInfo) {
-
     }
 
     #[inline]
@@ -181,53 +162,50 @@ where TProtoHandler: ProtocolHandler
             Async::NotReady => ()
         };
 
-		// Continue negotiation of newly-opened substreams on the listening side.
-		// We remove each element from `negotiating_in` one by one and add them back if not ready.
-		for n in (0 .. self.negotiating_in.len()).rev() {
-			let mut in_progress = self.negotiating_in.swap_remove(n);
-			match in_progress.poll() {
-				Ok(Async::Ready(upgrade)) => {
-					if let Some(event) = self.handler.inject_fully_negotiated(upgrade) {
-						return Ok(Async::Ready(Some(event)));
-					}
-				},
-				Ok(Async::NotReady) => {
-					self.negotiating_in.push(in_progress);
-				},
-				Err(err) => {
-					return Ok(Async::Ready(Some(SubstrateOutEvent::SubstreamUpgradeFail(err))));
-				},
-			}
-		}
-
-		// Continue negotiation of newly-opened substreams.
-		// We remove each element from `negotiating_out` one by one and add them back if not ready.
-		for n in (0 .. self.negotiating_out.len()).rev() {
-			let (purpose, mut in_progress) = self.negotiating_out.swap_remove(n);
-			match in_progress.poll() {
-				Ok(Async::Ready(upgrade)) => {
-					if let Some(event) = self.inject_fully_negotiated(upgrade) {
-						return Ok(Async::Ready(Some(event)));
-					}
-				},
-				Ok(Async::NotReady) => {
-					self.negotiating_out.push((purpose, in_progress));
+        // Continue negotiation of newly-opened substreams on the listening side.
+        // We remove each element from `negotiating_in` one by one and add them back if not ready.
+        for n in (0 .. self.negotiating_in.len()).rev() {
+            let mut in_progress = self.negotiating_in.swap_remove(n);
+            match in_progress.poll() {
+                Ok(Async::Ready(upgrade)) => {
+                    self.handler.inject_fully_negotiated(upgrade, NodeHandlerEndpoint::Listener);
                 },
-				Err(err) => {
-					// TODO: dispatch depending on actual error ; right now we assume that
-					// error == not supported, which is not necessarily true in theory
-					if let UpgradePurpose::Custom(_) = purpose {
-						return Ok(Async::Ready(Some(SubstrateOutEvent::Useless)));
-					} else {
-						let msg = format!("While upgrading to {:?}: {:?}", purpose, err);
-						let err = IoError::new(IoErrorKind::Other, msg);
-						return Ok(Async::Ready(Some(SubstrateOutEvent::SubstreamUpgradeFail(err))));
-					}
-				},
-			}
-		}
+                Ok(Async::NotReady) => {
+                    self.negotiating_in.push(in_progress);
+                },
+                Err(err) => {
+                    // TODO: what to do?
+                },
+            }
+        }
+
+        // Continue negotiation of newly-opened substreams.
+        // We remove each element from `negotiating_out` one by one and add them back if not ready.
+        for n in (0 .. self.negotiating_out.len()).rev() {
+            let (upgr_info, mut in_progress) = self.negotiating_out.swap_remove(n);
+            match in_progress.poll() {
+                Ok(Async::Ready(upgrade)) => {
+                    let endpoint = NodeHandlerEndpoint::Dialer(upgr_info);
+                    self.handler.inject_fully_negotiated(upgrade, endpoint);
+                },
+                Ok(Async::NotReady) => {
+                    self.negotiating_out.push((upgr_info, in_progress));
+                },
+                Err(err) => {
+                    // TODO: dispatch depending on actual error ; right now we assume that
+                    // error == not supported, which is not necessarily true in theory
+                    let msg = format!("Error while upgrading: {:?}", err);
+                    let err = IoError::new(IoErrorKind::Other, msg);
+                    self.handler.inject_dial_upgrade_error(upgr_info, &err);
+                    // TODO: what to do?
+                },
+            }
+        }
+
+        self.to_notify = Some(task::current());
+        Ok(Async::NotReady)
     }
-}*/
+}
 
 pub enum Either<A, B> {
     First(A),
@@ -299,6 +277,14 @@ where TProto1: ProtocolHandler<TSubstream>,
     fn inject_inbound_closed(&mut self) {
         self.proto1.inject_inbound_closed();
         self.proto2.inject_inbound_closed();
+    }
+
+    #[inline]
+    fn inject_dial_upgrade_error(&mut self, info: Self::OutboundOpenInfo, error: &IoError) {
+        match info {
+            Either::First(info) => self.proto1.inject_dial_upgrade_error(info, error),
+            Either::Second(info) => self.proto2.inject_dial_upgrade_error(info, error),
+        }
     }
 
     #[inline]
