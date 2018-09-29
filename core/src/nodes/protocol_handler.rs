@@ -24,7 +24,7 @@ use nodes::handled_node::{NodeHandler, NodeHandlerEndpoint, NodeHandlerEvent};
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use tokio_io::{AsyncRead, AsyncWrite};
 use upgrade::{self, apply::UpgradeApplyFuture, choice::OrUpgrade, map::Map as UpgradeMap};
-use {ConnectionUpgrade, Endpoint};
+use {ConnectionUpgrade, ConnectedPoint};
 
 /// Handler for a protocol.
 pub trait ProtocolHandler<TSubstream> {
@@ -104,13 +104,16 @@ where TProtoHandler: ProtocolHandler<TSubstream>,
     type OutboundOpenInfo = TProtoHandler::OutboundOpenInfo;
 
     fn inject_substream(&mut self, substream: TSubstream, endpoint: NodeHandlerEndpoint<Self::OutboundOpenInfo>) {
-        let addr = "/ip4/1.2.3.4/tcp/5".parse().unwrap();
+        let connected_point = ConnectedPoint::Listener {
+            listen_addr: "/ip4/0.0.0.0/tcp/6".parse().unwrap(),
+            send_back_addr: "/ip4/1.2.3.4/tcp/5".parse().unwrap(),
+        };
         // FIXME: ^
 
         // For listeners, propose all the possible upgrades.
         if let NodeHandlerEndpoint::Listener = endpoint {
             let protocol = self.handler.protocol();
-            let upgrade = upgrade::apply(substream, self.handler.protocol(), Endpoint::Listener, &addr);
+            let upgrade = upgrade::apply(substream, self.handler.protocol(), connected_point);
             self.negotiating_in.push(upgrade);
             return;
         }
@@ -128,7 +131,7 @@ where TProtoHandler: ProtocolHandler<TSubstream>,
             self.queued_dial_upgrades.remove(0)
         };
 
-        let upgrade = upgrade::apply(substream, self.handler.protocol(), Endpoint::Listener, &addr);
+        let upgrade = upgrade::apply(substream, self.handler.protocol(), connected_point);
         self.negotiating_in.push(upgrade);
 
         // Since we pushed to `upgrades_in_progress_dial`, we have to notify the task.
