@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use futures::{prelude::*, task};
+use futures::prelude::*;
 use libp2p_core::{ConnectionUpgrade, nodes::protocol_handler::ProtocolHandler};
 use libp2p_core::nodes::handled_node::{NodeHandlerEvent, NodeHandlerEndpoint};
 use std::io;
@@ -51,9 +51,6 @@ pub struct PeriodicPingHandler<TSubstream> {
     ///
     /// Every time we receive a pong, we reset the timer to the next time.
     next_ping: Delay,
-
-    /// Task to notify when we need to be re-polled.
-    to_notify: Option<task::Task>,
 }
 
 /// Event produced by the periodic pinger.
@@ -78,7 +75,6 @@ impl<TSubstream> PeriodicPingHandler<TSubstream> {
             active_ping_out: None,
             next_ping: Delay::new(Instant::now() + DELAY_TO_FIRST_PING),
             upgrading: false,
-            to_notify: None,
         }
     }
 }
@@ -122,9 +118,7 @@ where TSubstream: AsyncRead + AsyncWrite,
     #[inline]
     fn inject_dial_upgrade_error(&mut self, _: Self::OutboundOpenInfo, _: &io::Error) {
         // We notify the task in order to try reopen a substream.
-        if let Some(to_notify) = self.to_notify.take() {
-            to_notify.notify()
-        }
+        self.upgrading = false;
     }
 
     fn shutdown(&mut self) {
@@ -193,8 +187,10 @@ where TSubstream: AsyncRead + AsyncWrite,
         // Poll the active ping attempt.
         if let Some(mut deadline) = self.active_ping_out.take() {
             match deadline.poll() {
-                Ok(Async::Ready(())) =>
-                    return Ok(Async::Ready(Some(NodeHandlerEvent::Custom(OutEvent::Unresponsive)))),
+                Ok(Async::Ready(())) => {
+                    self.ping_out_substream = None;
+                    return Ok(Async::Ready(Some(NodeHandlerEvent::Custom(OutEvent::Unresponsive))))
+                },
                 Ok(Async::NotReady) => self.active_ping_out = Some(deadline),
                 Err(err) => {
                     warn!(target: "sub-libp2p", "Active ping deadline errored: {:?}", err);

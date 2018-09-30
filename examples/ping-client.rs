@@ -22,14 +22,12 @@ extern crate bytes;
 extern crate env_logger;
 extern crate futures;
 extern crate libp2p;
-extern crate tokio_current_thread;
-extern crate tokio_io;
+extern crate tokio;
 
 use futures::{Future, Stream};
-use futures::sync::oneshot;
 use std::env;
 use libp2p::core::Transport;
-use libp2p::core::{upgrade, either::EitherOutput};
+use libp2p::core::{nodes::protocol_handler::ProtocolHandler, upgrade};
 use libp2p::tcp::TcpConfig;
 
 fn main() {
@@ -46,78 +44,50 @@ fn main() {
         // On top of TCP/IP, we will use either the plaintext protocol or the secio protocol,
         // depending on which one the remote supports.
         .with_upgrade({
-            let plain_text = upgrade::PlainTextConfig;
-
-            let secio = {
-                let private_key = include_bytes!("test-rsa-private-key.pk8");
-                let public_key = include_bytes!("test-rsa-public-key.der").to_vec();
-                libp2p::secio::SecioConfig::new(
-                    libp2p::secio::SecioKeyPair::rsa_from_pkcs8(private_key, public_key).unwrap()
-                )
-            };
-
-            upgrade::or(
-                upgrade::map(plain_text, |pt| EitherOutput::First(pt)),
-                upgrade::map(secio, |out: libp2p::secio::SecioOutput<_>| EitherOutput::Second(out.stream))
+            let private_key = include_bytes!("test-rsa-private-key.pk8");
+            let public_key = include_bytes!("test-rsa-public-key.der").to_vec();
+            libp2p::secio::SecioConfig::new(
+                libp2p::secio::SecioKeyPair::rsa_from_pkcs8(private_key, public_key).unwrap()
             )
         })
 
-        // On top of plaintext or secio, we will use the multiplex protocol.
-        .with_upgrade(libp2p::mplex::MplexConfig::new())
-        // The object returned by the call to `with_upgrade(MplexConfig::new())` can't be used as a
-        // `Transport` because the output of the upgrade is not a stream but a controller for
-        // muxing. We have to explicitly call `into_connection_reuse()` in order to turn this into
-        // a `Transport`.
-        .map(|val, _| ((), val))
-        .into_connection_reuse()
-        .map(|((), val), _| val);
+        .and_then(move |out, endpoint| {
+            let peer_id = out.remote_key.into_peer_id();
+            let upgrade = upgrade::map(libp2p::mplex::MplexConfig::new(), move |muxer| (peer_id, muxer));
+            upgrade::apply(out.stream, upgrade, endpoint)
+        });
 
-    // Let's put this `transport` into a *swarm*. The swarm will handle all the incoming
-    // connections for us. The second parameter we pass is the connection upgrade that is accepted
-    // by the listening part. We don't want to accept anything, so we pass a dummy object that
-    // represents a connection that is always denied.
-    let (tx, rx) = oneshot::channel();
-    let mut tx = Some(tx);
-    let (swarm_controller, swarm_future) = libp2p::core::swarm(
-        transport.clone().with_upgrade(libp2p::ping::Ping::default()),
-        |out, _client_addr| {
-            if let libp2p::ping::PingOutput::Pinger(mut pinger) = out {
-                let tx = tx.take();
-                pinger.ping(());
-                pinger
-                    .into_future()
-                    .map(move |_| {
-                        println!("Received pong from the remote");
-                        if let Some(tx) = tx {
-                            let _ = tx.send(());
-                        }
-                        ()
-                    })
-                    .map_err(|(e, _)| e)
-            } else {
-                unreachable!()
-            }
-        },
-    );
+    let mut swarm = libp2p::core::nodes::swarm::Swarm::with_handler_builder(transport, |_| {
+        libp2p::ping::PeriodicPingHandler::new().into_node_handler()
+    });
+
+    swarm.listen_on("/ip4/127.0.0.1/tcp/5050".parse().unwrap()).unwrap();
 
     // We now use the controller to dial to the address.
-    swarm_controller
-        .dial(target_addr.parse().expect("invalid multiaddr"),
-            transport.with_upgrade(libp2p::ping::Ping::default()))
+    swarm
+        .dial(target_addr.parse().expect("invalid multiaddr"))
         // If the multiaddr protocol exists but is not supported, then we get an error containing
         // the original multiaddress.
         .expect("unsupported multiaddr");
 
-    // The address we actually listen on can be different from the address that was passed to
-    // the `listen_on` function. For example if you pass `/ip4/0.0.0.0/tcp/0`, then the port `0`
-    // will be replaced with the actual port.
-
     // `swarm_future` is a future that contains all the behaviour that we want, but nothing has
     // actually started yet. Because we created the `TcpConfig` with tokio, we need to run the
     // future through the tokio core.
-    tokio_current_thread::block_on_all(
-        rx.select(swarm_future.for_each(|_| Ok(())).map_err(|_| unreachable!()))
-            .map_err(|(e, _)| e)
-            .map(|_| ()),
-    ).unwrap();
+    tokio::run(
+        swarm.for_each(|event| {
+            match event {
+                libp2p::core::nodes::swarm::SwarmEvent::NodeEvent { event, .. } => {
+                    match event {
+                        libp2p::ping::OutEvent::Unresponsive => println!("unresponsive"),
+                        libp2p::ping::OutEvent::PingSuccess(duration) => println!("{:?}", duration),
+                        _ => (),
+                    }
+                },
+                _ => (),
+            };
+
+            Ok(())
+        })
+            .map_err(|_| ()),
+    );
 }

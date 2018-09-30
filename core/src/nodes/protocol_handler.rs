@@ -27,6 +27,7 @@ use upgrade::{self, apply::UpgradeApplyFuture, choice::OrUpgrade, map::Map as Up
 use {ConnectionUpgrade, ConnectedPoint};
 
 /// Handler for a protocol.
+// TODO: add upgrade timeout system
 pub trait ProtocolHandler<TSubstream> {
     /// Custom event that can be received from the outside.
     type InEvent;
@@ -75,7 +76,6 @@ pub trait ProtocolHandler<TSubstream> {
             handler: self,
             negotiating_in: Vec::new(),
             negotiating_out: Vec::new(),
-            queued_dial_upgrades: Vec::new(),
             to_notify: None,
         }
     }
@@ -87,7 +87,6 @@ where TProtoHandler: ProtocolHandler<TSubstream>,
       TSubstream: AsyncRead + AsyncWrite,
 {
     handler: TProtoHandler,
-    queued_dial_upgrades: Vec<TProtoHandler::OutboundOpenInfo>,
     negotiating_in: Vec<UpgradeApplyFuture<TSubstream, TProtoHandler::Protocol>>,
     negotiating_out: Vec<(TProtoHandler::OutboundOpenInfo, UpgradeApplyFuture<TSubstream, TProtoHandler::Protocol>)>,
     to_notify: Option<task::Task>,
@@ -104,37 +103,28 @@ where TProtoHandler: ProtocolHandler<TSubstream>,
     type OutboundOpenInfo = TProtoHandler::OutboundOpenInfo;
 
     fn inject_substream(&mut self, substream: TSubstream, endpoint: NodeHandlerEndpoint<Self::OutboundOpenInfo>) {
-        let connected_point = ConnectedPoint::Listener {
-            listen_addr: "/ip4/0.0.0.0/tcp/6".parse().unwrap(),
-            send_back_addr: "/ip4/1.2.3.4/tcp/5".parse().unwrap(),
-        };
-        // FIXME: ^
-
-        // For listeners, propose all the possible upgrades.
-        if let NodeHandlerEndpoint::Listener = endpoint {
-            let protocol = self.handler.protocol();
-            let upgrade = upgrade::apply(substream, self.handler.protocol(), connected_point);
-            self.negotiating_in.push(upgrade);
-            return;
+        match endpoint {
+            NodeHandlerEndpoint::Listener => {
+                let connected_point = ConnectedPoint::Listener {
+                    listen_addr: "/ip4/0.0.0.0/tcp/6".parse().unwrap(),
+                    send_back_addr: "/ip4/1.2.3.4/tcp/5".parse().unwrap(),
+                };
+                // FIXME: ^
+                let protocol = self.handler.protocol();
+                let upgrade = upgrade::apply(substream, self.handler.protocol(), connected_point);
+                self.negotiating_in.push(upgrade);
+            },
+            NodeHandlerEndpoint::Dialer(upgr_info) => {
+                let connected_point = ConnectedPoint::Dialer {
+                    address: "/ip4/0.0.0.0/tcp/6".parse().unwrap(),
+                };
+                // FIXME: ^
+                let upgrade = upgrade::apply(substream, self.handler.protocol(), connected_point);
+                self.negotiating_out.push((upgr_info, upgrade));
+            },
         }
 
-        // If we're the dialer, we have to decide which upgrade we want.
-        let purpose = if self.queued_dial_upgrades.is_empty() {
-            // Since we sometimes remove elements from `queued_dial_upgrades` before they succeed
-            // but after the outbound substream has started opening, it is possible that the queue
-            // is empty when we receive a substream. This is not an error.
-            // Example: we want to open a Kademlia substream, we start opening one, but in the
-            // meanwhile the remote opens a Kademlia substream. When we receive the new substream,
-            // we don't need it anymore.
-            return;
-        } else {
-            self.queued_dial_upgrades.remove(0)
-        };
-
-        let upgrade = upgrade::apply(substream, self.handler.protocol(), connected_point);
-        self.negotiating_in.push(upgrade);
-
-        // Since we pushed to `upgrades_in_progress_dial`, we have to notify the task.
+        // Since we pushed to the vectors, we have to notify the task so that they are polled.
         if let Some(task) = self.to_notify.take() {
             task.notify();
         }
@@ -146,6 +136,7 @@ where TProtoHandler: ProtocolHandler<TSubstream>,
     }
 
     fn inject_outbound_closed(&mut self, user_data: Self::OutboundOpenInfo) {
+        unimplemented!()        // FIXME:
     }
 
     #[inline]
@@ -159,12 +150,6 @@ where TProtoHandler: ProtocolHandler<TSubstream>,
     }
 
     fn poll(&mut self) -> Poll<Option<NodeHandlerEvent<Self::OutboundOpenInfo, Self::OutEvent>>, IoError> {
-        // Poll the handler first.
-        match self.handler.poll()? {
-            Async::Ready(event) => return Ok(Async::Ready(event)),
-            Async::NotReady => ()
-        };
-
         // Continue negotiation of newly-opened substreams on the listening side.
         // We remove each element from `negotiating_in` one by one and add them back if not ready.
         for n in (0 .. self.negotiating_in.len()).rev() {
@@ -204,6 +189,13 @@ where TProtoHandler: ProtocolHandler<TSubstream>,
                 },
             }
         }
+
+        // Poll the handler at the end so that we see the consequences of the method calls on
+        // `self.handler`.
+        match self.handler.poll()? {
+            Async::Ready(event) => return Ok(Async::Ready(event)),
+            Async::NotReady => ()
+        };
 
         self.to_notify = Some(task::current());
         Ok(Async::NotReady)
