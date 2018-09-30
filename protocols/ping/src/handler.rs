@@ -35,6 +35,9 @@ const DELAY_TO_NEXT_PING: Duration = Duration::from_secs(15);
 /// Delay between the moment we connect and the first time we ping.
 const DELAY_TO_FIRST_PING: Duration = Duration::from_secs(5);
 
+/// Protocol handler that handles pinging the remote at a regular period.
+///
+/// Produces `Unresponsive` if the remote doesn't respond.
 pub struct PeriodicPingHandler<TSubstream> {
     /// Configuration for the ping protocol.
     ping_config: Ping<Instant>,
@@ -176,6 +179,7 @@ where TSubstream: AsyncRead + AsyncWrite,
                 Ok(Async::Ready(Some(started))) => {
                     self.active_ping_out = None;
                     self.next_ping.reset(Instant::now() + DELAY_TO_NEXT_PING);
+                    self.ping_out_substream = Some(ping_dialer);
                     let ev = OutEvent::PingSuccess(started.elapsed());
                     return Ok(Async::Ready(Some(NodeHandlerEvent::Custom(ev))));
                 },
