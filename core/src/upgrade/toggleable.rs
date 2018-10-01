@@ -21,7 +21,7 @@
 use futures::future;
 use std::io::Error as IoError;
 use tokio_io::{AsyncRead, AsyncWrite};
-use upgrade::{ConnectionUpgrade, ConnectedPoint};
+use upgrade::{ConnectionUpgrade, Endpoint};
 
 /// Wraps around a `ConnectionUpgrade` and makes it possible to enable or disable an upgrade.
 #[inline]
@@ -89,10 +89,10 @@ where
         self,
         socket: C,
         id: Self::UpgradeIdentifier,
-        endpoint: ConnectedPoint
+        ty: Endpoint,
     ) -> Self::Future {
         if self.enabled {
-            future::Either::B(self.inner.upgrade(socket, id, endpoint))
+            future::Either::B(self.inner.upgrade(socket, id, ty))
         } else {
             future::Either::A(future::empty())
         }

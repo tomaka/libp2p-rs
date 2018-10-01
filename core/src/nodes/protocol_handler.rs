@@ -25,7 +25,7 @@ use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use tokio_io::{AsyncRead, AsyncWrite};
 use upgrade::{self, apply::UpgradeApplyFuture, choice::OrUpgrade, map::Map as UpgradeMap};
 use upgrade::toggleable::Toggleable;
-use {ConnectionUpgrade, ConnectedPoint};
+use {ConnectionUpgrade, Endpoint};
 
 /// Handler for a protocol.
 // TODO: add upgrade timeout system
@@ -108,13 +108,8 @@ where TProtoHandler: ProtocolHandler<TSubstream>,
     fn inject_substream(&mut self, substream: TSubstream, endpoint: NodeHandlerEndpoint<Self::OutboundOpenInfo>) {
         match endpoint {
             NodeHandlerEndpoint::Listener => {
-                let connected_point = ConnectedPoint::Listener {
-                    listen_addr: "/ip4/0.0.0.0/tcp/6".parse().unwrap(),
-                    send_back_addr: "/ip4/1.2.3.4/tcp/5".parse().unwrap(),
-                };
-                // FIXME: ^
                 let protocol = self.handler.listen_protocol();
-                let upgrade = upgrade::apply(substream, protocol, connected_point);
+                let upgrade = upgrade::apply(substream, protocol, Endpoint::Listener);
                 self.negotiating_in.push(upgrade);
             },
             NodeHandlerEndpoint::Dialer(upgr_info) => {
@@ -126,11 +121,7 @@ where TProtoHandler: ProtocolHandler<TSubstream>,
                     self.queued_dial_upgrades.remove(0)
                 };
 
-                let connected_point = ConnectedPoint::Dialer {
-                    address: "/ip4/0.0.0.0/tcp/6".parse().unwrap(),
-                };
-                // FIXME: ^
-                let upgrade = upgrade::apply(substream, proto_upgrade, connected_point);
+                let upgrade = upgrade::apply(substream, proto_upgrade, Endpoint::Dialer);
                 self.negotiating_out.push((upgr_info, upgrade));
             },
         }

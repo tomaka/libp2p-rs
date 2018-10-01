@@ -362,7 +362,7 @@ where
         self,
         incoming: S,
         _: (),
-        _: libp2p_core::ConnectedPoint,
+        _: libp2p_core::Endpoint,
     ) -> Self::Future {
         debug!("Starting secio upgrade");
 
