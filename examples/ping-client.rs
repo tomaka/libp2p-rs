@@ -54,14 +54,12 @@ fn main() {
         .and_then(move |out, endpoint| {
             let peer_id = out.remote_key.into_peer_id();
             let upgrade = upgrade::map(libp2p::mplex::MplexConfig::new(), move |muxer| (peer_id, muxer));
-            upgrade::apply(out.stream, upgrade, endpoint)
+            upgrade::apply(out.stream, upgrade, endpoint.into())
         });
 
     let mut swarm = libp2p::core::nodes::swarm::Swarm::with_handler_builder(transport, |_| {
         libp2p::ping::PeriodicPingHandler::new().into_node_handler()
     });
-
-    swarm.listen_on("/ip4/127.0.0.1/tcp/5050".parse().unwrap()).unwrap();
 
     // We now use the controller to dial to the address.
     swarm

@@ -93,12 +93,16 @@ where
     IncomingConnection {
         /// Address of the listener which received the connection.
         listen_addr: Multiaddr,
+        /// Address used to send back data to the remote.
+        send_back_addr: Multiaddr,
     },
 
     /// An error happened when negotiating a new connection.
     IncomingConnectionError {
         /// Address of the listener which received the connection.
         listen_addr: Multiaddr,
+        /// Address used to send back data to the remote.
+        send_back_addr: Multiaddr,
         /// The error that happened.
         error: IoError,
     },
@@ -197,6 +201,7 @@ where
 }
 
 /// How we connected to a node.
+// TODO: move definition
 #[derive(Debug, Clone)]
 pub enum ConnectedPoint {
     /// We dialed the node.
@@ -208,7 +213,19 @@ pub enum ConnectedPoint {
     Listener {
         /// Address of the listener that received the connection.
         listen_addr: Multiaddr,
+        /// Stack of protocols used to send back data to the remote.
+        send_back_addr: Multiaddr,
     },
+}
+
+impl<'a> From<&'a ConnectedPoint> for Endpoint {
+    #[inline]
+    fn from(endpoint: &'a ConnectedPoint) -> Endpoint {
+        match *endpoint {
+            ConnectedPoint::Dialer { .. } => Endpoint::Dialer,
+            ConnectedPoint::Listener { .. } => Endpoint::Listener,
+        }
+    }
 }
 
 impl From<ConnectedPoint> for Endpoint {
@@ -247,15 +264,15 @@ pub trait HandlerFactory {
     type Handler;
 
     /// Creates a new handler.
-    fn new_handler(&self) -> Self::Handler;
+    fn new_handler(&self, connected_point: ConnectedPoint) -> Self::Handler;
 }
 
-impl<T, THandler> HandlerFactory for T where T: Fn() -> THandler {
+impl<T, THandler> HandlerFactory for T where T: Fn(ConnectedPoint) -> THandler {
     type Handler = THandler;
 
     #[inline]
-    fn new_handler(&self) -> THandler {
-        (*self)()
+    fn new_handler(&self, connected_point: ConnectedPoint) -> THandler {
+        (*self)(connected_point)
     }
 }
 
@@ -355,9 +372,9 @@ where
             Err((_, addr)) => return Err(addr),
         };
 
-        let reach_id = self.active_nodes.add_reach_attempt(future, self.handler_build.new_handler());
-        self.reach_attempts.other_reach_attempts
-            .push((reach_id, ConnectedPoint::Dialer { address: addr }));
+        let connected_point = ConnectedPoint::Dialer { address: addr };
+        let reach_id = self.active_nodes.add_reach_attempt(future, self.handler_build.new_handler(connected_point.clone()));
+        self.reach_attempts.other_reach_attempts.push((reach_id, connected_point));
         Ok(())
     }
 
@@ -435,12 +452,16 @@ where
         TInEvent: Send + 'static,
         TOutEvent: Send + 'static,
     {
+        let connected_point = ConnectedPoint::Dialer {
+            address: first.clone(),
+        };
+
         let reach_id = match self.transport().clone().dial(first.clone()) {
-            Ok(fut) => self.active_nodes.add_reach_attempt(fut, self.handler_build.new_handler()),
+            Ok(fut) => self.active_nodes.add_reach_attempt(fut, self.handler_build.new_handler(connected_point)),
             Err((_, addr)) => {
                 let msg = format!("unsupported multiaddr {}", addr);
                 let fut = future::err(IoError::new(IoErrorKind::Other, msg));
-                self.active_nodes.add_reach_attempt(fut, self.handler_build.new_handler())
+                self.active_nodes.add_reach_attempt(fut, self.handler_build.new_handler(connected_point))
             },
         };
 
@@ -479,15 +500,19 @@ where
                 listen_addr,
                 send_back_addr,
             })) => {
-                let id = self.active_nodes.add_reach_attempt(upgrade, self.handler_build.new_handler());
+                let connected_point = ConnectedPoint::Listener {
+                    listen_addr: listen_addr.clone(),
+                    send_back_addr: send_back_addr.clone(),
+                };
+
+                let id = self.active_nodes.add_reach_attempt(upgrade, self.handler_build.new_handler(connected_point.clone()));
                 self.reach_attempts.other_reach_attempts.push((
                     id,
-                    ConnectedPoint::Listener {
-                        listen_addr: listen_addr.clone(),
-                    },
+                    connected_point,
                 ));
                 return Async::Ready(Some(SwarmEvent::IncomingConnection {
                     listen_addr,
+                    send_back_addr,
                 }));
             }
             Async::Ready(Some(ListenersEvent::Closed {
@@ -766,8 +791,8 @@ where TTrans: Transport
                     error,
                 });
             }
-            ConnectedPoint::Listener { listen_addr } => {
-                return (Default::default(), SwarmEvent::IncomingConnectionError { listen_addr, error });
+            ConnectedPoint::Listener { listen_addr, send_back_addr } => {
+                return (Default::default(), SwarmEvent::IncomingConnectionError { listen_addr, send_back_addr, error });
             }
         }
     }
