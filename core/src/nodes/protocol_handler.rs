@@ -24,7 +24,8 @@ use nodes::handled_node::{NodeHandler, NodeHandlerEndpoint, NodeHandlerEvent};
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use tokio_io::{AsyncRead, AsyncWrite};
 use upgrade::{self, apply::UpgradeApplyFuture, choice::OrUpgrade, map::Map as UpgradeMap};
-use upgrade::toggleable::Toggleable;
+use upgrade::{DeniedConnectionUpgrade, toggleable::Toggleable};
+use void::Void;
 use {ConnectionUpgrade, Endpoint};
 
 /// Handler for a protocol.
@@ -67,6 +68,17 @@ pub trait ProtocolHandler<TSubstream> {
     /// node should be closed.
     fn poll(&mut self) -> Poll<Option<NodeHandlerEvent<(Self::Protocol, Self::OutboundOpenInfo), Self::OutEvent>>, IoError>;
 
+    /// Builds an implementation of `ProtocolHandler` that combines this handler with another one.
+    #[inline]
+    fn select<TOther>(self, other: TOther) -> ProtocolHandlerSelect<Self, TOther>
+    where Self: Sized
+    {
+        ProtocolHandlerSelect {
+            proto1: self,
+            proto2: other,
+        }
+    }
+
     /// Builds a `NodeHandlerWrapper`.
     #[inline]
     fn into_node_handler(self) -> NodeHandlerWrapper<TSubstream, Self>
@@ -78,6 +90,58 @@ pub trait ProtocolHandler<TSubstream> {
             negotiating_in: Vec::new(),
             negotiating_out: Vec::new(),
             queued_dial_upgrades: Vec::new(),
+        }
+    }
+}
+
+/// Implementation of `ProtocolHandler` that doesn't handle anything.
+pub struct DummyProtocolHandler {
+    shutting_down: bool,
+}
+
+impl Default for DummyProtocolHandler {
+    #[inline]
+    fn default() -> Self {
+        DummyProtocolHandler {
+            shutting_down: false,
+        }
+    }
+}
+
+impl<TSubstream> ProtocolHandler<TSubstream> for DummyProtocolHandler
+where TSubstream: AsyncRead + AsyncWrite
+{
+    type InEvent = Void;
+    type OutEvent = Void;
+    type Protocol = DeniedConnectionUpgrade;
+    type OutboundOpenInfo = Void;
+
+    #[inline]
+    fn listen_protocol(&self) -> Self::Protocol {
+        DeniedConnectionUpgrade
+    }
+
+    fn inject_fully_negotiated(&mut self, protocol: <Self::Protocol as ConnectionUpgrade<TSubstream>>::Output, endpoint: NodeHandlerEndpoint<Self::OutboundOpenInfo>) {
+    }
+
+    fn inject_event(&mut self, event: Self::InEvent) {
+    }
+
+    fn inject_dial_upgrade_error(&mut self, info: Self::OutboundOpenInfo, error: &IoError) {
+    }
+
+    fn inject_inbound_closed(&mut self) {
+    }
+
+    fn shutdown(&mut self) {
+        self.shutting_down = true;
+    }
+
+    fn poll(&mut self) -> Poll<Option<NodeHandlerEvent<(Self::Protocol, Self::OutboundOpenInfo), Self::OutEvent>>, IoError> {
+        if self.shutting_down {
+            Ok(Async::Ready(None))
+        } else {
+            Ok(Async::NotReady)
         }
     }
 }

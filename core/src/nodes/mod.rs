@@ -26,3 +26,4 @@ pub mod listeners;
 pub mod node;
 pub mod protocol_handler;
 pub mod swarm;
+pub mod swarm2;

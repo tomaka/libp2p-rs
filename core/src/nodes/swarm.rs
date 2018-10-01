@@ -200,6 +200,98 @@ where
     },
 }
 
+impl<TTrans, TOutEvent> SwarmEvent<TTrans, TOutEvent>
+where
+    TTrans: Transport,
+{
+    /// Turns the custom node event into a different custom node event.
+    pub fn map_out_event<TMap, TNewOut>(self, map: TMap) -> SwarmEvent<TTrans, TNewOut>
+    where TMap: FnOnce(&PeerId, TOutEvent) -> TNewOut
+    {
+        match self {
+            SwarmEvent::ListenerClosed { listen_addr, listener, result } => {
+                SwarmEvent::ListenerClosed { listen_addr, listener, result }
+            },
+            SwarmEvent::IncomingConnection { listen_addr, send_back_addr } => {
+                SwarmEvent::IncomingConnection { listen_addr, send_back_addr }
+            },
+            SwarmEvent::IncomingConnectionError { listen_addr, send_back_addr, error } => {
+                SwarmEvent::IncomingConnectionError { listen_addr, send_back_addr, error }
+            },
+            SwarmEvent::Connected { peer_id, endpoint } => {
+                SwarmEvent::Connected { peer_id, endpoint }
+            },
+            SwarmEvent::Replaced { peer_id, closed_multiaddr, endpoint } => {
+                SwarmEvent::Replaced { peer_id, closed_multiaddr, endpoint }
+            },
+            SwarmEvent::NodeClosed { peer_id, address } => {
+                SwarmEvent::NodeClosed { peer_id, address }
+            },
+            SwarmEvent::NodeError { peer_id, address, error } => {
+                SwarmEvent::NodeError { peer_id, address, error }
+            },
+            SwarmEvent::DialError { remain_addrs_attempt, peer_id, multiaddr, error } => {
+                SwarmEvent::DialError { remain_addrs_attempt, peer_id, multiaddr, error }
+            },
+            SwarmEvent::UnknownPeerDialError { multiaddr, error } => {
+                SwarmEvent::UnknownPeerDialError { multiaddr, error }
+            },
+            SwarmEvent::PublicKeyMismatch { expected_peer_id, actual_peer_id, multiaddr, remain_addrs_attempt } => {
+                SwarmEvent::PublicKeyMismatch { expected_peer_id, actual_peer_id, multiaddr, remain_addrs_attempt }
+            },
+            SwarmEvent::NodeEvent { peer_id, event } => {
+                let new_ev = map(&peer_id, event);
+                SwarmEvent::NodeEvent { peer_id, event: new_ev }
+            },
+        }
+    }
+
+    /// Turns the custom node event into a different custom node event.
+    pub fn filter_map_out_event<TMap, TNewOut>(self, map: TMap) -> Option<SwarmEvent<TTrans, TNewOut>>
+    where TMap: FnOnce(&PeerId, TOutEvent) -> Option<TNewOut>
+    {
+        match self {
+            SwarmEvent::ListenerClosed { listen_addr, listener, result } => {
+                Some(SwarmEvent::ListenerClosed { listen_addr, listener, result })
+            },
+            SwarmEvent::IncomingConnection { listen_addr, send_back_addr } => {
+                Some(SwarmEvent::IncomingConnection { listen_addr, send_back_addr })
+            },
+            SwarmEvent::IncomingConnectionError { listen_addr, send_back_addr, error } => {
+                Some(SwarmEvent::IncomingConnectionError { listen_addr, send_back_addr, error })
+            },
+            SwarmEvent::Connected { peer_id, endpoint } => {
+                Some(SwarmEvent::Connected { peer_id, endpoint })
+            },
+            SwarmEvent::Replaced { peer_id, closed_multiaddr, endpoint } => {
+                Some(SwarmEvent::Replaced { peer_id, closed_multiaddr, endpoint })
+            },
+            SwarmEvent::NodeClosed { peer_id, address } => {
+                Some(SwarmEvent::NodeClosed { peer_id, address })
+            },
+            SwarmEvent::NodeError { peer_id, address, error } => {
+                Some(SwarmEvent::NodeError { peer_id, address, error })
+            },
+            SwarmEvent::DialError { remain_addrs_attempt, peer_id, multiaddr, error } => {
+                Some(SwarmEvent::DialError { remain_addrs_attempt, peer_id, multiaddr, error })
+            },
+            SwarmEvent::UnknownPeerDialError { multiaddr, error } => {
+                Some(SwarmEvent::UnknownPeerDialError { multiaddr, error })
+            },
+            SwarmEvent::PublicKeyMismatch { expected_peer_id, actual_peer_id, multiaddr, remain_addrs_attempt } => {
+                Some(SwarmEvent::PublicKeyMismatch { expected_peer_id, actual_peer_id, multiaddr, remain_addrs_attempt })
+            },
+            SwarmEvent::NodeEvent { peer_id, event } => {
+                if let Some(new_ev) = map(&peer_id, event) {
+                    Some(SwarmEvent::NodeEvent { peer_id, event: new_ev })
+                } else {
+                    None
+                }
+            },
+        }
+    }
+}
+
 /// How we connected to a node.
 // TODO: move definition
 #[derive(Debug, Clone)]
@@ -394,6 +486,18 @@ where
             .iter()
             .filter(|&(_, endpoint)| endpoint.is_listener())
             .count()
+    }
+
+    /// Returns the builder that was passed at construction.
+    #[inline]
+    pub fn handler_builder(&self) -> &THandlerBuild {
+        &self.handler_build
+    }
+
+    /// Returns the builder that was passed at construction.
+    #[inline]
+    pub fn handler_builder_mut(&mut self) -> &mut THandlerBuild {
+        &mut self.handler_build
     }
 
     /// Sends an event to all nodes.

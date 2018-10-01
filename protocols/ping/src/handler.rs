@@ -38,6 +38,7 @@ const DELAY_TO_FIRST_PING: Duration = Duration::from_secs(5);
 /// Protocol handler that handles pinging the remote at a regular period.
 ///
 /// Produces `Unresponsive` if the remote doesn't respond.
+// TODO: split with ping listener
 pub struct PeriodicPingHandler<TSubstream> {
     /// Configuration for the ping protocol.
     ping_config: Ping<Instant>,
