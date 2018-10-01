@@ -57,9 +57,8 @@ fn main() {
             upgrade::apply(out.stream, upgrade, endpoint.into())
         });
 
-    let mut swarm = libp2p::core::nodes::swarm::Swarm::with_handler_builder(transport, |_| {
-        libp2p::ping::PeriodicPingHandler::new().into_node_handler()
-    });
+    let layer = libp2p::ping::AutoDcLayer::new(libp2p::core::nodes::swarm2::BaseSwarmLayer::default());
+    let mut swarm = libp2p::core::nodes::swarm2::Swarm2::new(transport, layer);
 
     // We now use the controller to dial to the address.
     swarm
@@ -68,21 +67,34 @@ fn main() {
         // the original multiaddress.
         .expect("unsupported multiaddr");
 
+    enum MyEvent<TTrans: libp2p::Transport, TVoid> {
+        Swarm(libp2p::core::nodes::swarm::SwarmEvent<TTrans, TVoid>),
+        Ping(libp2p::ping::AutoDcLayerEvent),
+    }
+
+    impl<TTrans: libp2p::Transport, TVoid> From<libp2p::core::nodes::swarm::SwarmEvent<TTrans, TVoid>> for MyEvent<TTrans, TVoid> {
+        fn from(event: libp2p::core::nodes::swarm::SwarmEvent<TTrans, TVoid>) -> Self {
+            MyEvent::Swarm(event)
+        }
+    }
+
+    impl<TTrans: libp2p::Transport, TVoid> From<libp2p::ping::AutoDcLayerEvent> for MyEvent<TTrans, TVoid> {
+        fn from(event: libp2p::ping::AutoDcLayerEvent) -> Self {
+            MyEvent::Ping(event)
+        }
+    }
+
     // `swarm_future` is a future that contains all the behaviour that we want, but nothing has
     // actually started yet. Because we created the `TcpConfig` with tokio, we need to run the
     // future through the tokio core.
     tokio::run(
-        swarm.for_each(|event| {
+        swarm.for_each(|event: MyEvent<_, _>| {
             match event {
-                libp2p::core::nodes::swarm::SwarmEvent::NodeEvent { event, .. } => {
-                    match event {
-                        libp2p::ping::OutEvent::Unresponsive => println!("unresponsive"),
-                        libp2p::ping::OutEvent::PingSuccess(duration) => println!("{:?}", duration),
-                        _ => (),
-                    }
+                MyEvent::Ping(libp2p::ping::AutoDcLayerEvent::PingSuccess { ping_time, .. }) => {
+                    println!("Ping success in {:?}", ping_time);
                 },
                 _ => (),
-            };
+            }
 
             Ok(())
         })

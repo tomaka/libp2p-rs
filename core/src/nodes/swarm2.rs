@@ -64,9 +64,19 @@ where TTrans: Transport
 }
 
 /// Identity swarm layer.
-#[derive(Default)]
 pub struct BaseSwarmLayer<TTrans> where TTrans: Transport {
     pending_event: VecDeque<SwarmEvent<TTrans, Void>>,
+}
+
+impl<TTrans> Default for BaseSwarmLayer<TTrans>
+where TTrans: Transport
+{
+    #[inline]
+    fn default() -> Self {
+        BaseSwarmLayer {
+            pending_event: VecDeque::new(),
+        }
+    }
 }
 
 impl<TTrans, TSubstream, TFinalOutEvent> SwarmLayer<TTrans, TSubstream, TFinalOutEvent> for BaseSwarmLayer<TTrans>
@@ -243,9 +253,8 @@ where
     }
 }
 
-// TODO:
-/*impl<TTrans, TMuxer, TInEvent, TOutEvent, THandler, THandlerBuild> Stream for
-    Swarm2<TTrans, TInEvent, TOutEvent, THandlerBuild>
+impl<TTrans, TInEvent, TOutEvent, TMuxer, TLayer, TFinalOutEvent, TOutboundOpenInfo>
+    Stream for Swarm2<TTrans, Substream<TMuxer>, TInEvent, TOutEvent, TFinalOutEvent, TLayer>
 where
     TTrans: Transport<Output = (PeerId, TMuxer)> + Clone,
     TTrans::Dial: Send + 'static,
@@ -255,18 +264,25 @@ where
     TMuxer::Substream: Send,
     TInEvent: Send + 'static,
     TOutEvent: Send + 'static,
-    THandlerBuild: HandlerFactory<Handler = THandler>,
-    THandler: NodeHandler<Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent> + Send + 'static,
-    THandler::OutboundOpenInfo: Send + 'static, // TODO: shouldn't be necessary
+    TMuxer: StreamMuxer + Send + Sync + 'static,
+    TMuxer::Substream: Send + 'static,
+    TLayer: SwarmLayer<TTrans, Substream<TMuxer>, TFinalOutEvent, NodeHandlerOutEvent = TOutEvent>,
+    TLayer::Handler: ProtocolHandler<Substream<TMuxer>, InEvent = TInEvent, OutboundOpenInfo = TOutboundOpenInfo> + Send + 'static,
+    <TLayer::Handler as ProtocolHandler<Substream<TMuxer>>>::Protocol: Send + 'static,
+    <<TLayer::Handler as ProtocolHandler<Substream<TMuxer>>>::Protocol as ConnectionUpgrade<Substream<TMuxer>>>::Future: Send + 'static,
+    <<TLayer::Handler as ProtocolHandler<Substream<TMuxer>>>::Protocol as ConnectionUpgrade<Substream<TMuxer>>>::NamesIter: Clone + Send + 'static,
+    <<TLayer::Handler as ProtocolHandler<Substream<TMuxer>>>::Protocol as ConnectionUpgrade<Substream<TMuxer>>>::UpgradeIdentifier: Send + 'static,
+    TOutboundOpenInfo: Send + 'static,
+    TFinalOutEvent: Send + 'static,
 {
-    type Item = SwarmEvent<TTrans, TOutEvent>;
+    type Item = TFinalOutEvent;
     type Error = Void; // TODO: use `!` once stable
 
     #[inline]
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        Ok(self.poll())
+        Ok(self.poll().map(Option::Some))
     }
-}*/
+}
 
 pub struct LayerToHandlerBuild<TInner, TTrans, TSubstream, TFinalOutEvent>(TInner, PhantomData<(TTrans, TSubstream, TFinalOutEvent)>);
 impl<TInner, TTrans, TSubstream, TFinalOutEvent> HandlerFactory for LayerToHandlerBuild<TInner, TTrans, TSubstream, TFinalOutEvent>

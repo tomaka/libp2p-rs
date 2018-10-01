@@ -80,7 +80,7 @@ where TInner: SwarmLayer<TTrans, TSubstream, TOutEvent>,
                     ProtoHdlerEither::Second(ev) => Some(ev),
                 }
             });
-        
+
         if let Some(inner_event) = inner_event {
             self.inner.inject_swarm_event(inner_event);
         }
@@ -96,7 +96,7 @@ where TInner: SwarmLayer<TTrans, TSubstream, TOutEvent>,
             return Async::Ready(PollOutcome::GenerateEvent(event.into()));
         }
 
-        Async::NotReady
+        self.inner.poll()
     }
 }
 
