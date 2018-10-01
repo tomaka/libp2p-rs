@@ -91,7 +91,7 @@ where TSubstream: AsyncRead + AsyncWrite,
     type OutboundOpenInfo = ();
 
     #[inline]
-    fn protocol(&self) -> Self::Protocol {
+    fn listen_protocol(&self) -> Self::Protocol {
         self.ping_config
     }
 
@@ -134,7 +134,7 @@ where TSubstream: AsyncRead + AsyncWrite,
         }
     }
 
-    fn poll(&mut self) -> Poll<Option<NodeHandlerEvent<Self::OutboundOpenInfo, Self::OutEvent>>, io::Error> {
+    fn poll(&mut self) -> Poll<Option<NodeHandlerEvent<(Self::Protocol, Self::OutboundOpenInfo), Self::OutEvent>>, io::Error> {
         // Open a ping substream if necessary.
         if self.ping_out_substream.is_none() && !self.upgrading {
             if self.active_ping_out.is_none() {
@@ -142,7 +142,7 @@ where TSubstream: AsyncRead + AsyncWrite,
                 self.active_ping_out = Some(future);
             }
             self.upgrading = true;
-            return Ok(Async::Ready(Some(NodeHandlerEvent::OutboundSubstreamRequest(()))));
+            return Ok(Async::Ready(Some(NodeHandlerEvent::OutboundSubstreamRequest((self.ping_config, ())))));
         }
 
         // Poll the future that fires when we need to ping the node again.
