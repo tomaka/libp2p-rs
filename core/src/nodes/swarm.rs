@@ -221,24 +221,27 @@ pub enum ConnectedPoint {
 impl<'a> From<&'a ConnectedPoint> for Endpoint {
     #[inline]
     fn from(endpoint: &'a ConnectedPoint) -> Endpoint {
-        match *endpoint {
-            ConnectedPoint::Dialer { .. } => Endpoint::Dialer,
-            ConnectedPoint::Listener { .. } => Endpoint::Listener,
-        }
+        endpoint.to_endpoint()
     }
 }
 
 impl From<ConnectedPoint> for Endpoint {
     #[inline]
     fn from(endpoint: ConnectedPoint) -> Endpoint {
-        match endpoint {
-            ConnectedPoint::Dialer { .. } => Endpoint::Dialer,
-            ConnectedPoint::Listener { .. } => Endpoint::Listener,
-        }
+        endpoint.to_endpoint()
     }
 }
 
 impl ConnectedPoint {
+    /// Turns the `ConnectedPoint` into the corresponding `Endpoint`.
+    #[inline]
+    pub fn to_endpoint(&self) -> Endpoint {
+        match *self {
+            ConnectedPoint::Dialer { .. } => Endpoint::Dialer,
+            ConnectedPoint::Listener { .. } => Endpoint::Listener,
+        }
+    }
+
     /// Returns true if we are `Dialer`.
     #[inline]
     pub fn is_dialer(&self) -> bool {
