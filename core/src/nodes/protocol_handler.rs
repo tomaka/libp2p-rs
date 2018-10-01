@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use either::EitherOutput;
-use futures::{prelude::*, task};
+use futures::prelude::*;
 use nodes::handled_node::{NodeHandler, NodeHandlerEndpoint, NodeHandlerEvent};
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use tokio_io::{AsyncRead, AsyncWrite};

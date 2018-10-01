@@ -59,8 +59,8 @@ struct ReachAttempts {
     /// the peer ID.
     other_reach_attempts: Vec<(ReachAttemptId, ConnectedPoint)>,
 
-    /// For each peer ID we're connected to, contains the endpoint we're connected to.
-    connected_endpoints: FnvHashMap<PeerId, ConnectedPoint>,
+    /// For each peer ID we're connected to, contains the multiaddress we're connected to.
+    connected_multiaddresses: FnvHashMap<PeerId, Multiaddr>,
 }
 
 /// Attempt to reach a peer.
@@ -93,16 +93,12 @@ where
     IncomingConnection {
         /// Address of the listener which received the connection.
         listen_addr: Multiaddr,
-        /// Address used to send back data to the incoming connection.
-        send_back_addr: Multiaddr,
     },
 
     /// An error happened when negotiating a new connection.
     IncomingConnectionError {
         /// Address of the listener which received the connection.
         listen_addr: Multiaddr,
-        /// Address used to send back data to the incoming connection.
-        send_back_addr: Multiaddr,
         /// The error that happened.
         error: IoError,
     },
@@ -120,8 +116,8 @@ where
     Replaced {
         /// Id of the peer.
         peer_id: PeerId,
-        /// Endpoint we used to be connected to.
-        closed_endpoint: ConnectedPoint,
+        /// Multiaddr we were connected to, or `None` if it was unknown.
+        closed_multiaddr: Option<Multiaddr>,
         /// If `Listener`, then we received the connection. If `Dial`, then it's a connection that
         /// we opened.
         endpoint: ConnectedPoint,
@@ -134,16 +130,16 @@ where
     NodeClosed {
         /// Identifier of the node.
         peer_id: PeerId,
-        /// Endpoint we were connected to.
-        endpoint: ConnectedPoint,
+        /// Address we were connected to. `None` if not known.
+        address: Option<Multiaddr>,
     },
 
     /// The muxer of a node has produced an error.
     NodeError {
         /// Identifier of the node.
         peer_id: PeerId,
-        /// Endpoint we were connected to.
-        endpoint: ConnectedPoint,
+        /// Address we were connected to. `None` if not known.
+        address: Option<Multiaddr>,
         /// The error that happened.
         error: IoError,
     },
@@ -212,8 +208,6 @@ pub enum ConnectedPoint {
     Listener {
         /// Address of the listener that received the connection.
         listen_addr: Multiaddr,
-        /// Address to send back data to the remote.
-        send_back_addr: Multiaddr,
     },
 }
 
@@ -253,15 +247,15 @@ pub trait HandlerFactory {
     type Handler;
 
     /// Creates a new handler.
-    fn new_handler(&self, endpoint: ConnectedPoint) -> Self::Handler;
+    fn new_handler(&self) -> Self::Handler;
 }
 
-impl<T, THandler> HandlerFactory for T where T: Fn(ConnectedPoint) -> THandler {
+impl<T, THandler> HandlerFactory for T where T: Fn() -> THandler {
     type Handler = THandler;
 
     #[inline]
-    fn new_handler(&self, endpoint: ConnectedPoint) -> THandler {
-        (*self)(endpoint)
+    fn new_handler(&self) -> THandler {
+        (*self)()
     }
 }
 
@@ -276,7 +270,7 @@ where
 {
     /// Creates a new node events stream.
     #[inline]
-    pub fn new(transport: TTrans) -> Swarm<TTrans, TInEvent, TOutEvent, fn(ConnectedPoint) -> THandler>
+    pub fn new(transport: TTrans) -> Swarm<TTrans, TInEvent, TOutEvent, fn() -> THandler>
     where THandler: Default,
     {
         // TODO: with_capacity?
@@ -286,9 +280,9 @@ where
             reach_attempts: ReachAttempts {
                 out_reach_attempts: Default::default(),
                 other_reach_attempts: Vec::new(),
-                connected_endpoints: Default::default(),
+                connected_multiaddresses: Default::default(),
             },
-            handler_build: |_| Default::default(),
+            handler_build: Default::default,
         }
     }
 
@@ -302,7 +296,7 @@ where
             reach_attempts: ReachAttempts {
                 out_reach_attempts: Default::default(),
                 other_reach_attempts: Vec::new(),
-                connected_endpoints: Default::default(),
+                connected_multiaddresses: Default::default(),
             },
             handler_build,
         }
@@ -361,9 +355,7 @@ where
             Err((_, addr)) => return Err(addr),
         };
 
-        let endpoint = ConnectedPoint::Dialer { address: addr.clone() };
-
-        let reach_id = self.active_nodes.add_reach_attempt(future, self.handler_build.new_handler(endpoint));
+        let reach_id = self.active_nodes.add_reach_attempt(future, self.handler_build.new_handler());
         self.reach_attempts.other_reach_attempts
             .push((reach_id, ConnectedPoint::Dialer { address: addr }));
         Ok(())
@@ -406,12 +398,12 @@ where
                     .peer_mut(&peer_id)
                     .expect("we checked for Some just above"),
                 peer_id,
-                connected_endpoints: &mut self.reach_attempts.connected_endpoints,
+                connected_multiaddresses: &mut self.reach_attempts.connected_multiaddresses,
             });
         }
 
         if self.reach_attempts.out_reach_attempts.get_mut(&peer_id).is_some() {
-            debug_assert!(!self.reach_attempts.connected_endpoints.contains_key(&peer_id));
+            debug_assert!(!self.reach_attempts.connected_multiaddresses.contains_key(&peer_id));
             return Peer::PendingConnect(PeerPendingConnect {
                 attempt: match self.reach_attempts.out_reach_attempts.entry(peer_id.clone()) {
                     Entry::Occupied(e) => e,
@@ -421,7 +413,7 @@ where
             });
         }
 
-        debug_assert!(!self.reach_attempts.connected_endpoints.contains_key(&peer_id));
+        debug_assert!(!self.reach_attempts.connected_multiaddresses.contains_key(&peer_id));
         Peer::NotConnected(PeerNotConnected {
             nodes: self,
             peer_id,
@@ -443,15 +435,12 @@ where
         TInEvent: Send + 'static,
         TOutEvent: Send + 'static,
     {
-        let endpoint = ConnectedPoint::Dialer { address: first.clone() };
         let reach_id = match self.transport().clone().dial(first.clone()) {
-            Ok(fut) => {
-                self.active_nodes.add_reach_attempt(fut, self.handler_build.new_handler(endpoint))
-            },
+            Ok(fut) => self.active_nodes.add_reach_attempt(fut, self.handler_build.new_handler()),
             Err((_, addr)) => {
                 let msg = format!("unsupported multiaddr {}", addr);
                 let fut = future::err(IoError::new(IoErrorKind::Other, msg));
-                self.active_nodes.add_reach_attempt(fut, self.handler_build.new_handler(endpoint))
+                self.active_nodes.add_reach_attempt(fut, self.handler_build.new_handler())
             },
         };
 
@@ -490,22 +479,15 @@ where
                 listen_addr,
                 send_back_addr,
             })) => {
-                let endpoint = ConnectedPoint::Listener {
-                    listen_addr: listen_addr.clone(),
-                    send_back_addr: send_back_addr.clone(),
-                };
-
-                let id = self.active_nodes.add_reach_attempt(upgrade, self.handler_build.new_handler(endpoint));
+                let id = self.active_nodes.add_reach_attempt(upgrade, self.handler_build.new_handler());
                 self.reach_attempts.other_reach_attempts.push((
                     id,
                     ConnectedPoint::Listener {
                         listen_addr: listen_addr.clone(),
-                        send_back_addr: send_back_addr.clone(),
                     },
                 ));
                 return Async::Ready(Some(SwarmEvent::IncomingConnection {
                     listen_addr,
-                    send_back_addr,
                 }));
             }
             Async::Ready(Some(ListenersEvent::Closed {
@@ -541,28 +523,20 @@ where
                     peer_id,
                     error,
                 })) => {
-                    let endpoint = self.reach_attempts.connected_endpoints.remove(&peer_id)
-                        .expect("we insert in connected_endpoints whenever we receive a \
-                                 connection ; NodeError is only ever received for nodes that \
-                                 are connected ; therefore we always have an entry for this peer \
-                                 ; qed");
+                    let address = self.reach_attempts.connected_multiaddresses.remove(&peer_id);
                     debug_assert!(!self.reach_attempts.out_reach_attempts.contains_key(&peer_id));
                     action = Default::default();
                     out_event = SwarmEvent::NodeError {
                         peer_id,
-                        endpoint,
+                        address,
                         error,
                     };
                 }
                 Async::Ready(Some(CollectionEvent::NodeClosed { peer_id })) => {
-                    let endpoint = self.reach_attempts.connected_endpoints.remove(&peer_id)
-                        .expect("we insert in connected_endpoints whenever we receive a \
-                                 connection ; NodeClosed is only ever received for nodes that \
-                                 are connected ; therefore we always have an entry for this peer \
-                                 ; qed");
+                    let address = self.reach_attempts.connected_multiaddresses.remove(&peer_id);
                     debug_assert!(!self.reach_attempts.out_reach_attempts.contains_key(&peer_id));
                     action = Default::default();
-                    out_event = SwarmEvent::NodeClosed { peer_id, endpoint };
+                    out_event = SwarmEvent::NodeClosed { peer_id, address };
                 }
                 Async::Ready(Some(CollectionEvent::NodeEvent { peer_id, event })) => {
                     action = Default::default();
@@ -631,7 +605,7 @@ where
         let (_, endpoint) = reach_attempts.other_reach_attempts.swap_remove(in_pos);
 
         // Clear the known multiaddress for this peer.
-        let closed_endpoint = reach_attempts.connected_endpoints.insert(event.peer_id().clone(), endpoint.clone());
+        let closed_multiaddr = reach_attempts.connected_multiaddresses.remove(&event.peer_id());
         // Cancel any outgoing attempt to this peer.
         let action = if let Some(attempt) = reach_attempts.out_reach_attempts.remove(&event.peer_id()) {
             debug_assert_ne!(attempt.id, event.reach_attempt_id());
@@ -644,15 +618,13 @@ where
         };
 
         let (outcome, peer_id) = event.accept();
-        if let Some(closed_endpoint) = closed_endpoint {
-            debug_assert_eq!(outcome, CollectionNodeAccept::ReplacedExisting);
+        if outcome == CollectionNodeAccept::ReplacedExisting {
             return (action, SwarmEvent::Replaced {
                 peer_id,
                 endpoint,
-                closed_endpoint,
+                closed_multiaddr,
             });
         } else {
-            debug_assert_eq!(outcome, CollectionNodeAccept::NewEntry);
             return (action, SwarmEvent::Connected { peer_id, endpoint });
         }
     }
@@ -671,22 +643,20 @@ where
             .expect("is_outgoing_and_ok is true only if reach_attempts.out_reach_attempts.get(event.peer_id()) \
                         returned Some");
 
+        let closed_multiaddr = reach_attempts.connected_multiaddresses
+            .insert(event.peer_id().clone(), attempt.cur_attempted.clone());
         let endpoint = ConnectedPoint::Dialer {
             address: attempt.cur_attempted,
         };
-        let closed_endpoint = reach_attempts.connected_endpoints
-            .insert(event.peer_id().clone(), endpoint.clone());
 
         let (outcome, peer_id) = event.accept();
-        if let Some(closed_endpoint) = closed_endpoint {
-            debug_assert_eq!(outcome, CollectionNodeAccept::ReplacedExisting);
+        if outcome == CollectionNodeAccept::ReplacedExisting {
             return (Default::default(), SwarmEvent::Replaced {
                 peer_id,
                 endpoint,
-                closed_endpoint,
+                closed_multiaddr,
             });
         } else {
-            debug_assert_eq!(outcome, CollectionNodeAccept::NewEntry);
             return (Default::default(), SwarmEvent::Connected { peer_id, endpoint });
         }
     }
@@ -796,8 +766,8 @@ where TTrans: Transport
                     error,
                 });
             }
-            ConnectedPoint::Listener { listen_addr, send_back_addr } => {
-                return (Default::default(), SwarmEvent::IncomingConnectionError { listen_addr, send_back_addr, error });
+            ConnectedPoint::Listener { listen_addr } => {
+                return (Default::default(), SwarmEvent::IncomingConnectionError { listen_addr, error });
             }
         }
     }
@@ -961,8 +931,8 @@ impl<'a, TInEvent, TOutEvent> PeerPotentialConnect<'a, TInEvent, TOutEvent> {
 /// Access to a peer we are connected to.
 pub struct PeerConnected<'a, TInEvent: 'a> {
     peer: CollecPeerMut<'a, TInEvent>,
-    /// Reference to the `connected_endpoints` field of the parent.
-    connected_endpoints: &'a mut FnvHashMap<PeerId, ConnectedPoint>,
+    /// Reference to the `connected_multiaddresses` field of the parent.
+    connected_multiaddresses: &'a mut FnvHashMap<PeerId, Multiaddr>,
     peer_id: PeerId,
 }
 
@@ -973,17 +943,14 @@ impl<'a, TInEvent> PeerConnected<'a, TInEvent> {
     // TODO: consider returning a `PeerNotConnected` ; however this makes all the borrows things
     // much more annoying to deal with
     pub fn close(self) {
-        self.connected_endpoints.remove(&self.peer_id);
+        self.connected_multiaddresses.remove(&self.peer_id);
         self.peer.close()
     }
 
-    /// Returns the endpoint we are connected to the remote through.
+    /// Returns the outcome of the future that resolves the multiaddress of the peer.
     #[inline]
-    pub fn endpoint(&self) -> &ConnectedPoint {
-        self.connected_endpoints.get(&self.peer_id)
-            .expect("we insert in connected_endpoints whenever we receive a connection ; \
-                     a PeerConnected can only ever be created for nodes that are connected ; \
-                     therefore we always have an entry for this peer ; qed")
+    pub fn multiaddr(&self) -> Option<&Multiaddr> {
+        self.connected_multiaddresses.get(&self.peer_id)
     }
 
     /// Sends an event to the node.

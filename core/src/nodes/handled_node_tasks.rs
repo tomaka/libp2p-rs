@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use fnv::FnvHashMap;
-use futures::{prelude::*, stream, sync::mpsc, task};
+use futures::{prelude::*, stream, sync::mpsc};
 use muxing::StreamMuxer;
 use nodes::node::Substream;
 use nodes::handled_node::{HandledNode, NodeHandler};
