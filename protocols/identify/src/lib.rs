@@ -65,10 +65,6 @@
 //! a `IdentifySender` struct that can be used to transmit back to the remote the information about
 //! it.
 
-// avoid our own warnings
-// TODO: remove
-#![allow(deprecated)]
-
 extern crate bytes;
 extern crate fnv;
 extern crate futures;
