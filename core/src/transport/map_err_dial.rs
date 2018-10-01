@@ -21,7 +21,7 @@
 use futures::prelude::*;
 use multiaddr::Multiaddr;
 use std::io::Error as IoError;
-use transport::{MuxedTransport, Transport};
+use transport::Transport;
 
 /// See `Transport::map_err_dial`.
 #[derive(Debug, Copy, Clone)]
@@ -71,20 +71,5 @@ where
     #[inline]
     fn nat_traversal(&self, server: &Multiaddr, observed: &Multiaddr) -> Option<Multiaddr> {
         self.transport.nat_traversal(server, observed)
-    }
-}
-
-impl<T, F> MuxedTransport for MapErrDial<T, F>
-where
-    T: MuxedTransport + 'static,                     // TODO: 'static :-/
-    T::Dial: Send,
-    F: FnOnce(IoError, Multiaddr) -> IoError + Clone + Send + 'static, // TODO: 'static :-/
-{
-    type Incoming = T::Incoming;
-    type IncomingUpgrade = T::IncomingUpgrade;
-
-    #[inline]
-    fn next_incoming(self) -> Self::Incoming {
-        self.transport.next_incoming()
     }
 }

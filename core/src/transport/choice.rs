@@ -22,7 +22,7 @@ use either::{EitherListenStream, EitherOutput, EitherFuture};
 use futures::prelude::*;
 use multiaddr::Multiaddr;
 use std::io::Error as IoError;
-use transport::{MuxedTransport, Transport};
+use transport::Transport;
 
 /// Struct returned by `or_transport()`.
 #[derive(Debug, Copy, Clone)]
@@ -76,34 +76,5 @@ where
         }
 
         self.1.nat_traversal(server, observed)
-    }
-}
-
-impl<A, B> MuxedTransport for OrTransport<A, B>
-where
-    A: MuxedTransport,
-    B: MuxedTransport,
-    A::Incoming: Send + 'static,        // TODO: meh :-/
-    B::Incoming: Send + 'static,        // TODO: meh :-/
-    A::IncomingUpgrade: Send + 'static, // TODO: meh :-/
-    B::IncomingUpgrade: Send + 'static, // TODO: meh :-/
-    A::Output: 'static,          // TODO: meh :-/
-    B::Output: 'static,          // TODO: meh :-/
-{
-    type Incoming = Box<Future<Item = (Self::IncomingUpgrade, Multiaddr), Error = IoError> + Send>;
-    type IncomingUpgrade = Box<Future<Item = EitherOutput<A::Output, B::Output>, Error = IoError> + Send>;
-
-    #[inline]
-    fn next_incoming(self) -> Self::Incoming {
-        let first = self.0.next_incoming().map(|(out, addr)| {
-            let fut = out.map(EitherOutput::First);
-            (Box::new(fut) as Box<Future<Item = _, Error = _> + Send>, addr)
-        });
-        let second = self.1.next_incoming().map(|(out, addr)| {
-            let fut = out.map(EitherOutput::Second);
-            (Box::new(fut) as Box<Future<Item = _, Error = _> + Send>, addr)
-        });
-        let future = first.select(second).map(|(i, _)| i).map_err(|(e, _)| e);
-        Box::new(future) as Box<_>
     }
 }

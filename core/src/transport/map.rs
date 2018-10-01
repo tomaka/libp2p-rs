@@ -21,7 +21,7 @@
 use futures::prelude::*;
 use multiaddr::Multiaddr;
 use std::io::Error as IoError;
-use transport::{MuxedTransport, Transport};
+use transport::Transport;
 use Endpoint;
 
 /// See `Transport::map`.
@@ -87,30 +87,5 @@ where
     #[inline]
     fn nat_traversal(&self, server: &Multiaddr, observed: &Multiaddr) -> Option<Multiaddr> {
         self.transport.nat_traversal(server, observed)
-    }
-}
-
-impl<T, F, D> MuxedTransport for Map<T, F>
-where
-    T: MuxedTransport + 'static,             // TODO: 'static :-/
-    T::Dial: Send,
-    T::Listener: Send,
-    T::ListenerUpgrade: Send,
-    T::Incoming: Send,
-    T::IncomingUpgrade: Send,
-    F: FnOnce(T::Output, Endpoint) -> D + Clone + Send + 'static, // TODO: 'static :-/
-{
-    type Incoming = Box<Future<Item = (Self::IncomingUpgrade, Multiaddr), Error = IoError> + Send>;
-    type IncomingUpgrade = Box<Future<Item = Self::Output, Error = IoError> + Send>;
-
-    fn next_incoming(self) -> Self::Incoming {
-        let map = self.map;
-        let future = self.transport.next_incoming().map(move |(upgrade, addr)| {
-            let future = upgrade.map(move |output| {
-                map(output, Endpoint::Listener)
-            });
-            (Box::new(future) as Box<_>, addr)
-        });
-        Box::new(future)
     }
 }

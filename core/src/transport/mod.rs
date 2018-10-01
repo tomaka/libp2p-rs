@@ -29,7 +29,6 @@
 //! `UpgradedNode::or_upgrade` methods, you can combine multiple transports and/or upgrades
 //! together in a complex chain of protocols negotiation.
 
-use connection_reuse::ConnectionReuse;
 use futures::prelude::*;
 use multiaddr::Multiaddr;
 use muxing::StreamMuxer;
@@ -42,21 +41,16 @@ pub mod and_then;
 pub mod boxed;
 pub mod choice;
 pub mod denied;
-pub mod dummy;
 pub mod interruptible;
 pub mod map;
 pub mod map_err;
 pub mod map_err_dial;
 pub mod memory;
-pub mod muxed;
 pub mod upgrade;
 
-pub use self::boxed::BoxedMuxed;
 pub use self::choice::OrTransport;
 pub use self::denied::DeniedTransport;
-pub use self::dummy::DummyMuxing;
 pub use self::memory::connector;
-pub use self::muxed::MuxedTransport;
 pub use self::upgrade::UpgradedNode;
 
 /// A transport is an object that can be used to produce connections by listening or dialing a
@@ -131,21 +125,6 @@ pub trait Transport {
         boxed::boxed(self)
     }
 
-    /// Turns this `Transport` into an abstract boxed transport.
-    ///
-    /// This is the version if the transport supports muxing.
-    #[inline]
-    fn boxed_muxed(self) -> boxed::BoxedMuxed<Self::Output>
-    where Self: Sized + MuxedTransport + Clone + Send + Sync + 'static,
-          Self::Dial: Send + 'static,
-          Self::Listener: Send + 'static,
-          Self::ListenerUpgrade: Send + 'static,
-          Self::Incoming: Send + 'static,
-          Self::IncomingUpgrade: Send + 'static,
-    {
-        boxed::boxed_muxed(self)
-    }
-
     /// Applies a function on the output of the `Transport`.
     #[inline]
     fn map<F, O>(self, map: F) -> map::Map<Self, F>
@@ -218,30 +197,6 @@ pub trait Transport {
         F: Future<Item = O, Error = IoError> + 'static,
     {
         and_then::and_then(self, upgrade)
-    }
-
-    /// Builds a dummy implementation of `MuxedTransport` that uses this transport.
-    ///
-    /// The resulting object will not actually use muxing. This means that dialing the same node
-    /// twice will result in two different connections instead of two substreams on the same
-    /// connection.
-    #[inline]
-    fn with_dummy_muxing(self) -> DummyMuxing<Self>
-    where
-        Self: Sized,
-    {
-        DummyMuxing::new(self)
-    }
-
-    /// Turns this `Transport` into a `ConnectionReuse`. If the `Output` implements the
-    /// `StreamMuxer` trait, the returned object will implement `Transport` and `MuxedTransport`.
-    #[inline]
-    fn into_connection_reuse<D, M>(self) -> ConnectionReuse<Self, D, M>
-    where
-        Self: Sized + Transport<Output = (D, M)>,
-        M: StreamMuxer,
-    {
-        ConnectionReuse::new(self)
     }
 
     /// Wraps around the `Transport` and makes it interruptible.

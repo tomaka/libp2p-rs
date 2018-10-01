@@ -22,7 +22,6 @@ use futures::future;
 use futures::prelude::*;
 use multiaddr::Multiaddr;
 use std::io::{self, Cursor};
-use transport::MuxedTransport;
 use transport::Transport;
 
 /// Dummy implementation of `Transport` that just denies every single attempt.
@@ -49,15 +48,5 @@ impl Transport for DeniedTransport {
     #[inline]
     fn nat_traversal(&self, _: &Multiaddr, _: &Multiaddr) -> Option<Multiaddr> {
         None
-    }
-}
-
-impl MuxedTransport for DeniedTransport {
-    type Incoming = future::Empty<(Self::IncomingUpgrade, Multiaddr), io::Error>;
-    type IncomingUpgrade = future::Empty<Self::Output, io::Error>;
-
-    #[inline]
-    fn next_incoming(self) -> Self::Incoming {
-        future::empty()
     }
 }

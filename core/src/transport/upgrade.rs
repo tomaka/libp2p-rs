@@ -22,7 +22,7 @@ use futures::prelude::*;
 use multiaddr::Multiaddr;
 use std::io::Error as IoError;
 use tokio_io::{AsyncRead, AsyncWrite};
-use transport::{MuxedTransport, Transport};
+use transport::Transport;
 use upgrade::{apply, ConnectionUpgrade, Endpoint};
 
 /// Implements the `Transport` trait. Dials or listens, then upgrades any dialed or received
@@ -96,41 +96,6 @@ where
             });
 
         Ok(Box::new(future))
-    }
-
-    /// If the underlying transport is a `MuxedTransport`, then after calling `dial` we may receive
-    /// substreams opened by the dialed nodes.
-    ///
-    /// This function returns the next incoming substream. You are strongly encouraged to call it
-    /// if you have a muxed transport.
-    pub fn next_incoming(
-        self,
-    ) -> Box<
-        Future<
-                Item = (Box<Future<Item = C::Output, Error = IoError> + Send + 'a>, Multiaddr),
-                Error = IoError,
-            >
-            + Send + 'a,
-    >
-    where
-        T: MuxedTransport,
-        T::Incoming: Send,
-        T::IncomingUpgrade: Send,
-        C::NamesIter: Clone, // TODO: not elegant
-        C: Clone,
-    {
-        let upgrade = self.upgrade;
-
-        let future = self.transports.next_incoming().map(|(future, client_addr)| {
-            // Try to negotiate the protocol.
-            let future = future.and_then(move |connection| {
-                apply(connection, upgrade, Endpoint::Listener)
-            });
-
-            (Box::new(future) as Box<Future<Item = _, Error = _> + Send>, client_addr)
-        });
-
-        Box::new(future) as Box<_>
     }
 
     /// Start listening on the multiaddr using the transport that was passed to `new`.
@@ -223,28 +188,5 @@ where
     #[inline]
     fn nat_traversal(&self, server: &Multiaddr, observed: &Multiaddr) -> Option<Multiaddr> {
         self.transports.nat_traversal(server, observed)
-    }
-}
-
-impl<T, C> MuxedTransport for UpgradedNode<T, C>
-where
-    T: MuxedTransport + 'static,
-    T::Dial: Send,
-    T::Listener: Send,
-    T::ListenerUpgrade: Send,
-    T::Output: Send + AsyncRead + AsyncWrite,
-    T::Incoming: Send,
-    T::IncomingUpgrade: Send,
-    C: ConnectionUpgrade<T::Output> + Clone + Send + 'static,
-    C::NamesIter: Clone + Send,
-    C::Future: Send,
-    C::UpgradeIdentifier: Send,
-{
-    type Incoming = Box<Future<Item = (Self::IncomingUpgrade, Multiaddr), Error = IoError> + Send>;
-    type IncomingUpgrade = Box<Future<Item = C::Output, Error = IoError> + Send>;
-
-    #[inline]
-    fn next_incoming(self) -> Self::Incoming {
-        self.next_incoming()
     }
 }

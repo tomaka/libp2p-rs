@@ -31,7 +31,7 @@ extern crate log;
 extern crate tokio_timer;
 
 use futures::{Async, Future, Poll, Stream};
-use libp2p_core::{Multiaddr, MuxedTransport, Transport};
+use libp2p_core::{Multiaddr, Transport};
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use std::time::Duration;
 use tokio_timer::Timeout;
@@ -134,22 +134,6 @@ where
     }
 }
 
-impl<InnerTrans> MuxedTransport for TransportTimeout<InnerTrans>
-where
-    InnerTrans: MuxedTransport,
-{
-    type Incoming = TimeoutIncoming<InnerTrans::Incoming>;
-    type IncomingUpgrade = TokioTimerMapErr<Timeout<InnerTrans::IncomingUpgrade>>;
-
-    #[inline]
-    fn next_incoming(self) -> Self::Incoming {
-        TimeoutIncoming {
-            inner: self.inner.next_incoming(),
-            timeout: self.incoming_timeout,
-        }
-    }
-}
-
 // TODO: can be removed and replaced with an `impl Stream` once impl Trait is fully stable
 //       in Rust (https://github.com/rust-lang/rust/issues/34511)
 pub struct TimeoutListener<InnerStream> {
@@ -174,30 +158,6 @@ where
         } else {
             Ok(Async::Ready(None))
         }
-    }
-}
-
-// TODO: can be removed and replaced with an `impl Future` once impl Trait is fully stable
-//       in Rust (https://github.com/rust-lang/rust/issues/34511)
-#[must_use = "futures do nothing unless polled"]
-pub struct TimeoutIncoming<InnerFut> {
-    inner: InnerFut,
-    timeout: Duration,
-}
-
-impl<InnerFut, O> Future for TimeoutIncoming<InnerFut>
-where
-    InnerFut: Future<Item = (O, Multiaddr)>,
-{
-    type Item = (TokioTimerMapErr<Timeout<O>>, Multiaddr);
-    type Error = InnerFut::Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let (inner_fut, addr) = try_ready!(self.inner.poll());
-        let fut = TokioTimerMapErr {
-            inner: Timeout::new(inner_fut, self.timeout),
-        };
-        Ok(Async::Ready((fut, addr)))
     }
 }
 
