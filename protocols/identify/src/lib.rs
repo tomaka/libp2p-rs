@@ -81,12 +81,16 @@ extern crate parking_lot;
 extern crate protobuf;
 extern crate tokio_codec;
 extern crate tokio_io;
+extern crate tokio_timer;
 extern crate unsigned_varint;
+extern crate void;
 
+pub use self::handler::PeriodicIdentification;
 pub use self::id_transport::IdentifyTransport;
 pub use self::protocol::{IdentifyInfo, IdentifyOutput};
 pub use self::protocol::{IdentifyProtocolConfig, IdentifySender};
 
+mod handler;
 mod id_transport;
 mod protocol;
 mod structs_proto;
