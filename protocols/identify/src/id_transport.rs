@@ -71,10 +71,9 @@ where
 
         let listener = listener
             .map(move |(upgrade, remote_addr)| {
-                let addr = remote_addr.clone();
                 let upgr = upgrade
                     .and_then(move |muxer| {
-                        IdRetreiver::new(muxer, IdentifyProtocolConfig, Endpoint::Listener, addr)
+                        IdRetreiver::new(muxer, IdentifyProtocolConfig, Endpoint::Listener)
                     });
                 (Box::new(upgr) as Box<Future<Item = _, Error = _> + Send>, remote_addr)
             });
@@ -96,7 +95,7 @@ where
         };
 
         let dial = dial.and_then(move |muxer| {
-            IdRetreiver::new(muxer, IdentifyProtocolConfig, Endpoint::Dialer, addr)
+            IdRetreiver::new(muxer, IdentifyProtocolConfig, Endpoint::Dialer)
         });
 
         Ok(Box::new(dial) as Box<_>)
@@ -116,7 +115,6 @@ where TMuxer: muxing::StreamMuxer + Send + Sync + 'static,
     muxer: Option<Arc<TMuxer>>,
     state: IdRetreiverState<TMuxer>,
     endpoint: Endpoint,
-    remote_addr: Multiaddr,
 }
 
 enum IdRetreiverState<TMuxer>
@@ -133,7 +131,7 @@ impl<TMuxer> IdRetreiver<TMuxer>
 where TMuxer: muxing::StreamMuxer + Send + Sync + 'static,
       TMuxer::Substream: Send,
 {
-    fn new(muxer: TMuxer, config: IdentifyProtocolConfig, endpoint: Endpoint, remote_addr: Multiaddr) -> Self {
+    fn new(muxer: TMuxer, config: IdentifyProtocolConfig, endpoint: Endpoint) -> Self {
         let muxer = Arc::new(muxer);
         let opening = muxing::outbound_from_ref_and_wrap(muxer.clone());
 
@@ -141,7 +139,6 @@ where TMuxer: muxing::StreamMuxer + Send + Sync + 'static,
             muxer: Some(muxer),
             state: IdRetreiverState::OpeningSubstream(opening, config),
             endpoint,
-            remote_addr,
         }
     }
 }
@@ -159,7 +156,7 @@ where TMuxer: muxing::StreamMuxer + Send + Sync + 'static,
                 IdRetreiverState::OpeningSubstream(mut opening, config) => {
                     match opening.poll() {
                         Ok(Async::Ready(Some(substream))) => {
-                            let upgrade = apply::apply(substream, config, self.endpoint, &self.remote_addr);
+                            let upgrade = apply::apply(substream, config, self.endpoint);
                             self.state = IdRetreiverState::NegotiatingIdentify(upgrade);
                         },
                         Ok(Async::Ready(None)) => {
