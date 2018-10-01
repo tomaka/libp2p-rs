@@ -58,6 +58,9 @@ name = "echo-server"
 name = "floodsub"
 
 [[example]]
+name = "kademlia"
+
+[[example]]
 name = "ping-client"
 
 [[example]]
