@@ -78,7 +78,6 @@ pub trait ProtocolHandler<TSubstream> {
             negotiating_in: Vec::new(),
             negotiating_out: Vec::new(),
             queued_dial_upgrades: Vec::new(),
-            to_notify: None,
         }
     }
 }
@@ -93,7 +92,6 @@ where TProtoHandler: ProtocolHandler<TSubstream>,
     negotiating_out: Vec<(TProtoHandler::OutboundOpenInfo, UpgradeApplyFuture<TSubstream, TProtoHandler::Protocol>)>,
     // For each outbound substream request, how to upgrade it.
     queued_dial_upgrades: Vec<TProtoHandler::Protocol>,
-    to_notify: Option<task::Task>,
 }
 
 impl<TSubstream, TProtoHandler> NodeHandler<TSubstream> for NodeHandlerWrapper<TSubstream, TProtoHandler>
@@ -124,11 +122,6 @@ where TProtoHandler: ProtocolHandler<TSubstream>,
                 let upgrade = upgrade::apply(substream, proto_upgrade, Endpoint::Dialer);
                 self.negotiating_out.push((upgr_info, upgrade));
             },
-        }
-
-        // Since we pushed to the vectors, we have to notify the task so that they are polled.
-        if let Some(task) = self.to_notify.take() {
-            task.notify();
         }
     }
 
@@ -206,7 +199,6 @@ where TProtoHandler: ProtocolHandler<TSubstream>,
             Async::NotReady => ()
         };
 
-        self.to_notify = Some(task::current());
         Ok(Async::NotReady)
     }
 }
