@@ -18,62 +18,25 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use ratelimit::RateLimited;
-use std::io;
-use std::time::Duration;
-use tokio_executor::DefaultExecutor;
-use transport_timeout::TransportTimeout;
-use Transport;
+use core::Transport;
+use core::nodes::swarm::SwarmLayer;
+use ping;
 
-/// Trait automatically implemented on all objects that implement `Transport`. Provides some
+/// Trait automatically implemented on all objects that implement `SwarmLayer`. Provides some
 /// additional utilities.
-pub trait TransportExt: Transport {
-    /// Adds a timeout to all the sockets created by the transport.
+pub trait SwarmLayerExt<TTrans, TSubstream, TFinalOutEvent>: SwarmLayer<TTrans, TSubstream, TFinalOutEvent>
+where TTrans: Transport
+{
+    /// Appends a layer that automatically disconnects nodes if they stop responding to a
+    /// periodic ping.
     #[inline]
-    fn with_timeout(self, timeout: Duration) -> TransportTimeout<Self>
-    where
-        Self: Sized,
-    {
-        TransportTimeout::new(self, timeout)
+    fn with_ping_auto_disconnect(self) -> ping::AutoDcLayer<Self>
+    where Self:Sized {
+        ping::AutoDcLayer::new(self)
     }
-
-    /// Adds a timeout to all the outgoing sockets created by the transport.
-    #[inline]
-    fn with_outgoing_timeout(self, timeout: Duration) -> TransportTimeout<Self>
-    where
-        Self: Sized,
-    {
-        TransportTimeout::with_outgoing_timeout(self, timeout)
-    }
-
-    /// Adds a timeout to all the ingoing sockets created by the transport.
-    #[inline]
-    fn with_ingoing_timeout(self, timeout: Duration) -> TransportTimeout<Self>
-    where
-        Self: Sized,
-    {
-        TransportTimeout::with_ingoing_timeout(self, timeout)
-    }
-
-    /// Adds a maximum transfert rate to the sockets created with the transport.
-    #[inline]
-    fn with_rate_limit(
-        self,
-        max_read_per_sec: usize,
-        max_write_per_sec: usize,
-    ) -> io::Result<RateLimited<Self>>
-    where
-        Self: Sized,
-    {
-        RateLimited::new(
-            &mut DefaultExecutor::current(),
-            self,
-            max_read_per_sec,
-            max_write_per_sec,
-        )
-    }
-
-    // TODO: add methods to easily upgrade for secio/mplex/yamux
 }
 
-impl<TTransport> TransportExt for TTransport where TTransport: Transport {}
+impl<TLayer, TTrans, TSubstream, TFinalOutEvent> SwarmLayerExt<TTrans, TSubstream, TFinalOutEvent> for TLayer
+where TLayer: SwarmLayer<TTrans, TSubstream, TFinalOutEvent>,
+      TTrans: Transport,
+{}

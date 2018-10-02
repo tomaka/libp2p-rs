@@ -157,6 +157,8 @@ pub extern crate libp2p_uds as uds;
 pub extern crate libp2p_websocket as websocket;
 pub extern crate libp2p_yamux as yamux;
 
+mod swarm_ext;
+
 pub mod simple;
 
 pub use self::core::{Transport, ConnectionUpgrade, PeerId};
