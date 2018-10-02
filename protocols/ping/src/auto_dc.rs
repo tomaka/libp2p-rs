@@ -88,7 +88,7 @@ where TInner: SwarmLayer<TTrans, TOutEvent>,
         }
     }
 
-    fn poll(&mut self) -> Async<PollOutcome<TOutEvent>> {
+    fn poll(&mut self) -> Async<PollOutcome<<Self::Handler as ProtocolHandler>::InEvent, TOutEvent>> {
         if let Some(to_disconnect) = self.to_disconnect.pop_front() {
             return Async::Ready(PollOutcome::Disconnect(to_disconnect));
         }
@@ -98,7 +98,9 @@ where TInner: SwarmLayer<TTrans, TOutEvent>,
             return Async::Ready(PollOutcome::GenerateEvent(event.into()));
         }
 
-        self.inner.poll()
+        self.inner
+            .poll()
+            .map(|ev| ev.map_in_event(|_, ev| ProtoHdlerEither::Second(ev)))
     }
 }
 

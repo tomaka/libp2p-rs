@@ -19,17 +19,23 @@
 // DEALINGS IN THE SOFTWARE.
 
 use futures::prelude::*;
-use libp2p_core::{ConnectionUpgrade, nodes::protocol_handler::ProtocolHandler};
+use libp2p_core::{ConnectionUpgrade, PeerId, nodes::protocol_handler::ProtocolHandler};
 use libp2p_core::nodes::handled_node::{NodeHandlerEvent, NodeHandlerEndpoint};
-use protocol::{KadMsg, KademliaProtocolConfig, KadStreamSink};
-use std::io;
-use std::time::{Duration, Instant};
+use multihash::Multihash;
+use protocol::{KadMsg, KadPeer, KademliaProtocolConfig, KadStreamSink};
+use std::{collections::VecDeque, io};
 use tokio_io::{AsyncRead, AsyncWrite};
-use tokio_timer::Delay;
-use void::Void;
 
 /// Protocol handler that handles Kademlia communications with the remote.
-pub struct KademliaHandler<TSubstream> {
+///
+/// The handler will automatically open a Kademlia substream with the remote the first time we
+/// try to send a message to the remote.
+///
+/// The handler will only allow one Kademlia substream at a time. Any further open substream will
+/// automatically get closed.
+pub struct KademliaHandler<TSubstream>
+where TSubstream: AsyncRead + AsyncWrite,
+{
     /// Configuration for the Kademlia protocol.
     config: KademliaProtocolConfig,
 
@@ -50,7 +56,7 @@ pub struct KademliaHandler<TSubstream> {
 }
 
 /// Event produced by the Kademlia handler.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum OutEvent {
     /// Opened a new Kademlia substream.
     Open,
@@ -98,11 +104,17 @@ pub enum OutEvent {
     },
 }
 
-impl<TSubstream> KademliaHandler<TSubstream> {
+impl<TSubstream> KademliaHandler<TSubstream>
+where TSubstream: AsyncRead + AsyncWrite,
+{
+    /// Create a new `KademliaHandler`.
     pub fn new() -> KademliaHandler<TSubstream> {
         KademliaHandler {
             config: Default::default(),
             kademlia_substream: None,
+            send_queue: VecDeque::new(),
+            shutting_down: false,
+            upgrading: false,
         }
     }
 }
@@ -148,15 +160,32 @@ pub enum InEvent {
 
 impl Into<KadMsg> for InEvent {
     fn into(self) -> KadMsg {
-        unimplemented!()
+        match self {
+            InEvent::FindNodeReq { key } => {
+                KadMsg::FindNodeReq { key }
+            },
+            InEvent::FindNodeRes { closer_peers } => {
+                KadMsg::FindNodeRes { closer_peers }
+            },
+            InEvent::GetProvidersReq { key } => {
+                KadMsg::GetProvidersReq { key }
+            },
+            InEvent::GetProvidersRes { closer_peers, provider_peers } => {
+                KadMsg::GetProvidersRes { closer_peers, provider_peers }
+            },
+            InEvent::AddProvider { key, provider_peer } => {
+                KadMsg::AddProvider { key, provider_peer }
+            },
+        }
     }
 }
 
-impl<TSubstream> ProtocolHandler<TSubstream> for KademliaHandler<TSubstream>
-where TSubstream: AsyncRead + AsyncWrite,
+impl<TSubstream> ProtocolHandler for KademliaHandler<TSubstream>
+where TSubstream: AsyncRead + AsyncWrite + 'static,
 {
     type InEvent = InEvent;
     type OutEvent = OutEvent;
+    type Substream = TSubstream;
     type Protocol = KademliaProtocolConfig;
     type OutboundOpenInfo = ();
 
@@ -166,14 +195,14 @@ where TSubstream: AsyncRead + AsyncWrite,
     }
 
     fn inject_fully_negotiated(&mut self, protocol: <Self::Protocol as ConnectionUpgrade<TSubstream>>::Output, endpoint: NodeHandlerEndpoint<Self::OutboundOpenInfo>) {
-        if endpont.is_dialer() {
+        if let NodeHandlerEndpoint::Dialer(_) = endpoint {
             self.upgrading = false;
         }
 
         // If we already have a Kademlia substream, drop the incoming one.
         if self.kademlia_substream.is_none() {
             self.kademlia_substream = Some(protocol);
-            self.report_kad_open = true;
+            // TODO: self.report_kad_open = true;
         } else {
             // TODO: report
         }
@@ -181,7 +210,12 @@ where TSubstream: AsyncRead + AsyncWrite,
 
     #[inline]
     fn inject_event(&mut self, message: Self::InEvent) {
-        self.send_queue.push_back(Async::Ready(message.into()));
+        let message = message.into();
+        if let Some(pos) = self.send_queue.iter().position(|e| e == &Async::NotReady) {
+            self.send_queue[pos] = Async::Ready(message);
+        } else {
+            self.send_queue.push_back(Async::Ready(message));
+        }
     }
 
     #[inline]
@@ -203,7 +237,7 @@ where TSubstream: AsyncRead + AsyncWrite,
         // Special case if shutting down.
         if self.shutting_down {
             if let Some(kad) = self.kademlia_substream.as_mut() {
-                return kad.close()?.map(|_| None);
+                return Ok(kad.close()?.map(|_| None));
             } else {
                 return Ok(Async::Ready(None));
             }
@@ -217,16 +251,16 @@ where TSubstream: AsyncRead + AsyncWrite,
         }
 
         // Poll for Kademlia events.
-        if let Some(stream) = self.kademlia_substream.take() {
+        if let Some(mut stream) = self.kademlia_substream.take() {
             loop {
                 // Try to flush the send queue.
                 while let Some(message) = self.send_queue.pop_front() {
                     match message {
                         Async::Ready(msg) => {
-                            match stream.start_send(msg) {
+                            match stream.start_send(msg)? {
                                 AsyncSink::Ready => (),
                                 AsyncSink::NotReady(msg) => {
-                                    self.send_queue.push_front(msg);
+                                    self.send_queue.push_front(Async::Ready(msg));
                                     break;
                                 }
                             }
@@ -244,22 +278,58 @@ where TSubstream: AsyncRead + AsyncWrite,
                     Ok(Async::Ready(Some(KadMsg::FindNodeReq { key }))) => {
                         self.kademlia_substream = Some(stream);
                         self.send_queue.push_back(Async::NotReady);
-                        return Ok(Async::Ready(Some(OutEvent::FindNodeReq { key })));
+                        let ev = NodeHandlerEvent::Custom(OutEvent::FindNodeReq { key });
+                        return Ok(Async::Ready(Some(ev)));
+                    },
+                    Ok(Async::Ready(Some(KadMsg::FindNodeRes { closer_peers }))) => {
+                        self.kademlia_substream = Some(stream);
+                        let ev = NodeHandlerEvent::Custom(OutEvent::FindNodeRes { closer_peers });
+                        return Ok(Async::Ready(Some(ev)));
+                    },
+                    Ok(Async::Ready(Some(KadMsg::GetProvidersReq { key }))) => {
+                        self.kademlia_substream = Some(stream);
+                        self.send_queue.push_back(Async::NotReady);
+                        let ev = NodeHandlerEvent::Custom(OutEvent::GetProvidersReq { key });
+                        return Ok(Async::Ready(Some(ev)));
+                    },
+                    Ok(Async::Ready(Some(KadMsg::GetProvidersRes { closer_peers, provider_peers }))) => {
+                        self.kademlia_substream = Some(stream);
+                        let ev = NodeHandlerEvent::Custom(OutEvent::GetProvidersRes { closer_peers, provider_peers });
+                        return Ok(Async::Ready(Some(ev)));
+                    },
+                    Ok(Async::Ready(Some(KadMsg::AddProvider { key, provider_peer }))) => {
+                        self.kademlia_substream = Some(stream);
+                        let ev = NodeHandlerEvent::Custom(OutEvent::AddProvider { key, provider_peer });
+                        return Ok(Async::Ready(Some(ev)));
                     },
                     Ok(Async::Ready(Some(KadMsg::Ping))) => {
                         // We never send pings, so whenever we receive a ping through Kademlia
                         // we should answer with another ping.
                         self.send_queue.push_back(Async::Ready(KadMsg::Ping));
                     },
+                    Ok(Async::Ready(Some(KadMsg::PutValue { .. }))) => {
+                        let err = io::Error::new(io::ErrorKind::Other, "PUT_VALUE not implemented");
+                        return Err(err);
+                    },
+                    Ok(Async::Ready(Some(KadMsg::GetValueReq { .. }))) => {
+                        let err = io::Error::new(io::ErrorKind::Other, "GET_VALUE not implemented");
+                        return Err(err);
+                    },
+                    Ok(Async::Ready(Some(KadMsg::GetValueRes { .. }))) => {
+                        let err = io::Error::new(io::ErrorKind::Other, "GET_VALUE not implemented");
+                        return Err(err);
+                    },
                     Ok(Async::NotReady) => {
                         self.kademlia_substream = Some(stream);
                         break;
                     },
                     Ok(Async::Ready(None)) => {
-                        return Ok(Async::Ready(Some(OutEvent::KadClosed(Ok(())))));
+                        let ev = NodeHandlerEvent::Custom(OutEvent::Closed(Ok(())));
+                        return Ok(Async::Ready(Some(ev)));
                     },
                     Err(err) => {
-                        return Ok(Async::Ready(Some(OutEvent::KadClosed(Err(err)))));
+                        let ev = NodeHandlerEvent::Custom(OutEvent::Closed(Err(err)));
+                        return Ok(Async::Ready(Some(ev)));
                     },
                 }
             }

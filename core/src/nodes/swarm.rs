@@ -60,7 +60,7 @@ where TTrans: Transport
     fn inject_swarm_event(&mut self, event: SwarmEvent<TTrans, Self::NodeHandlerOutEvent>);
 
     /// Polls the handler for things to do on the swarm.
-    fn poll(&mut self) -> Async<PollOutcome<TFinalOutEvent>>;
+    fn poll(&mut self) -> Async<PollOutcome<<Self::Handler as ProtocolHandler>::InEvent, TFinalOutEvent>>;
 }
 
 /// Identity swarm layer.
@@ -98,7 +98,7 @@ where TTrans: Transport<Output = (PeerId, TMuxer)>,
     }
 
     #[inline]
-    fn poll(&mut self) -> Async<PollOutcome<TFinalOutEvent>> {
+    fn poll(&mut self) -> Async<PollOutcome<Void, TFinalOutEvent>> {
         if let Some(event) = self.pending_event.pop_front() {
             Async::Ready(PollOutcome::GenerateEvent(event.into()))
         } else {
@@ -108,9 +108,27 @@ where TTrans: Transport<Output = (PeerId, TMuxer)>,
 }
 
 /// What to do after `poll` returns.
-pub enum PollOutcome<TOutEvent> {
+pub enum PollOutcome<TInEvent, TOutEvent> {
     GenerateEvent(TOutEvent),
     Disconnect(PeerId),
+    SendNodeEvent(PeerId, TInEvent),
+}
+
+impl<TInEvent, TOutEvent> PollOutcome<TInEvent, TOutEvent> {
+    /// Maps the `TInEvent` to another type.
+    #[inline]
+    pub fn map_in_event<TMap, TNewIn>(self, map: TMap) -> PollOutcome<TNewIn, TOutEvent>
+    where TMap: FnOnce(&PeerId, TInEvent) -> TNewIn
+    {
+        match self {
+            PollOutcome::GenerateEvent(ev) => PollOutcome::GenerateEvent(ev),
+            PollOutcome::Disconnect(id) => PollOutcome::Disconnect(id),
+            PollOutcome::SendNodeEvent(peer_id, ev) => {
+                let new_ev = map(&peer_id, ev);
+                PollOutcome::SendNodeEvent(peer_id, new_ev)
+            },
+        }
+    }
 }
 
 impl<TTrans, TInEvent, TOutEvent, TMuxer, TLayer, TFinalOutEvent, TOutboundOpenInfo>
@@ -247,7 +265,13 @@ where
                 },
                 Async::Ready(PollOutcome::GenerateEvent(event)) => {
                     return Async::Ready(event);
-                }
+                },
+                Async::Ready(PollOutcome::SendNodeEvent(peer_id, event)) => {
+                    // TODO: what if doesn't exist?
+                    if let Some(mut peer) = self.swarm.peer(peer_id).as_connected() {
+                        peer.send_event(event);
+                    }
+                },
             }
         }
     }

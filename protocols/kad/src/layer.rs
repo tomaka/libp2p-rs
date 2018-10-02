@@ -19,13 +19,15 @@
 // DEALINGS IN THE SOFTWARE.
 
 use futures::prelude::*;
+use handler::{KademliaHandler, OutEvent};
 use libp2p_core::{ConnectionUpgrade, PeerId, nodes::protocol_handler::ProtocolHandler};
 use libp2p_core::nodes::protocol_handler::{ProtocolHandlerSelect, Either as ProtoHdlerEither};
 use libp2p_core::nodes::raw_swarm::{ConnectedPoint, SwarmEvent};
 use libp2p_core::nodes::swarm::{SwarmLayer, PollOutcome};
 use libp2p_core::Transport;
+use multihash::Multihash;
+use protocol::KadPeer;
 use std::collections::VecDeque;
-use std::time::Duration;
 use tokio_io::{AsyncRead, AsyncWrite};
 
 /// Layer that automatically handles Kademlia.
@@ -40,18 +42,21 @@ impl<TInner> KademliaLayer<TInner> {
     pub fn new(inner: TInner) -> Self {
         KademliaLayer {
             inner,
+            pending_events: VecDeque::new(),
         }
     }
 }
 
-impl<TInner, TTrans, TSubstream, TOutEvent> SwarmLayer<TTrans, TSubstream, TOutEvent> for KademliaLayer<TInner>
-where TInner: SwarmLayer<TTrans, TSubstream, TOutEvent>,
+impl<TInner, TTrans, TSubstream, TOutEvent> SwarmLayer<TTrans, TOutEvent> for KademliaLayer<TInner>
+where TInner: SwarmLayer<TTrans, TOutEvent>,
       TOutEvent: From<KademliaLayerEvent>,
       // TODO: too many bounds
-      <<TInner::Handler as ProtocolHandler<TSubstream>>::Protocol as ConnectionUpgrade<TSubstream>>::Future: Send + 'static,
-      <<TInner::Handler as ProtocolHandler<TSubstream>>::Protocol as ConnectionUpgrade<TSubstream>>::Output: Send + 'static,
+      TInner::Handler: ProtocolHandler<Substream = TSubstream>,
+      <TInner::Handler as ProtocolHandler>::Protocol: ConnectionUpgrade<TSubstream>,
+      <<TInner::Handler as ProtocolHandler>::Protocol as ConnectionUpgrade<TSubstream>>::Future: Send + 'static,
+      <<TInner::Handler as ProtocolHandler>::Protocol as ConnectionUpgrade<TSubstream>>::Output: Send + 'static,
       TTrans: Transport,
-      TSubstream: AsyncRead + AsyncWrite + Send + 'static,  // TODO: useless bounds
+      TSubstream: AsyncRead + AsyncWrite + Send + 'static,
 {
     type Handler = ProtocolHandlerSelect<KademliaHandler<TSubstream>, TInner::Handler>;
     type NodeHandlerOutEvent = ProtoHdlerEither<OutEvent, TInner::NodeHandlerOutEvent>;
@@ -60,14 +65,15 @@ where TInner: SwarmLayer<TTrans, TSubstream, TOutEvent>,
         KademliaHandler::new().select(self.inner.new_handler(connected_point))
     }
 
-    fn inject_swarm_event(&mut self, event: SwarmEvent<TTrans, <Self::Handler as ProtocolHandler<TSubstream>>::OutEvent>) {
+    fn inject_swarm_event(&mut self, event: SwarmEvent<TTrans, <Self::Handler as ProtocolHandler>::OutEvent>) {
         let inner_event = event
             .filter_map_out_event(|peer_id, event| {
                 match event {
                     ProtoHdlerEither::First(OutEvent::FindNodeReq { key }) => {
                         let ev = KademliaLayerEvent::FindNodeRequest {
                             peer_id: peer_id.clone(),
-                            key
+                            key,
+                            request_identifier: KademliaRequestId {},
                         };
 
                         self.pending_events.push_back(ev);
@@ -83,6 +89,24 @@ where TInner: SwarmLayer<TTrans, TSubstream, TOutEvent>,
                         self.pending_events.push_back(ev);
                         None
                     },
+                    ProtoHdlerEither::First(OutEvent::FindNodeRes { .. }) => {
+                        None
+                    },
+                    ProtoHdlerEither::First(OutEvent::GetProvidersReq { .. }) => {
+                        None
+                    },
+                    ProtoHdlerEither::First(OutEvent::GetProvidersRes { .. }) => {
+                        None
+                    },
+                    ProtoHdlerEither::First(OutEvent::Open) => {
+                        None
+                    },
+                    ProtoHdlerEither::First(OutEvent::IgnoredIncoming) => {
+                        None
+                    },
+                    ProtoHdlerEither::First(OutEvent::Closed(_)) => {
+                        None
+                    },
                     ProtoHdlerEither::Second(ev) => Some(ev),
                 }
             });
@@ -92,32 +116,32 @@ where TInner: SwarmLayer<TTrans, TSubstream, TOutEvent>,
         }
     }
 
-    fn poll(&mut self) -> Async<PollOutcome<TOutEvent>> {
+    fn poll(&mut self) -> Async<PollOutcome<<Self::Handler as ProtocolHandler>::InEvent, TOutEvent>> {
         if let Some(event) = self.pending_events.pop_front() {
-            return Async::Ready(PollOutcome {
-                generated_event: Some(event),
-            });
+            return Async::Ready(PollOutcome::GenerateEvent(event.into()));
         }
 
         self.inner.poll()
+            .map(|ev| ev.map_in_event(|_, ev| ProtoHdlerEither::Second(ev)))
     }
 }
 
 /// Opaque structure to pass back when answering a Kademlia query.
 // Doesn't implement Clone on purpose, so that the user can only answer a request once.
+#[derive(Debug)]
 pub struct KademliaRequestId {
 
 }
 
 /// Event generated by the `KademliaLayer`.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum KademliaLayerEvent {
     /// A node performs a FIND_NODE request towards us, and we should answer it.
     FindNodeRequest {
         /// The node that made the request.
         peer_id: PeerId,
         /// The searched key.
-        key: Multihash,
+        key: PeerId,
         /// Identifier to pass back when answering the query.
         request_identifier: KademliaRequestId,
     },
