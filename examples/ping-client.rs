@@ -57,8 +57,8 @@ fn main() {
             upgrade::apply(out.stream, upgrade, endpoint.into())
         });
 
-    let layer = libp2p::ping::AutoDcLayer::new(libp2p::core::nodes::swarm2::BaseSwarmLayer::default());
-    let mut swarm = libp2p::core::nodes::swarm2::Swarm2::new(transport, layer);
+    let layer = libp2p::ping::AutoDcLayer::new(libp2p::core::nodes::swarm::BaseSwarmLayer::default());
+    let mut swarm = libp2p::core::nodes::swarm::Swarm::new(transport, layer);
 
     // We now use the controller to dial to the address.
     swarm
@@ -68,12 +68,12 @@ fn main() {
         .expect("unsupported multiaddr");
 
     enum MyEvent<TTrans: libp2p::Transport, TVoid> {
-        Swarm(libp2p::core::nodes::swarm::SwarmEvent<TTrans, TVoid>),
+        Swarm(libp2p::core::nodes::raw_swarm::SwarmEvent<TTrans, TVoid>),
         Ping(libp2p::ping::AutoDcLayerEvent),
     }
 
-    impl<TTrans: libp2p::Transport, TVoid> From<libp2p::core::nodes::swarm::SwarmEvent<TTrans, TVoid>> for MyEvent<TTrans, TVoid> {
-        fn from(event: libp2p::core::nodes::swarm::SwarmEvent<TTrans, TVoid>) -> Self {
+    impl<TTrans: libp2p::Transport, TVoid> From<libp2p::core::nodes::raw_swarm::SwarmEvent<TTrans, TVoid>> for MyEvent<TTrans, TVoid> {
+        fn from(event: libp2p::core::nodes::raw_swarm::SwarmEvent<TTrans, TVoid>) -> Self {
             MyEvent::Swarm(event)
         }
     }

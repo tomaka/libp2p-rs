@@ -84,10 +84,10 @@ pub use self::high_level::{KadSystemConfig, KadSystem, KadQueryEvent};
 pub use self::kad_server::{KadConnecController, KadConnecConfig, KadIncomingRequest, KadFindNodeRespond};
 pub use self::protocol::{KadConnectionType, KadPeer};
 
-mod handler;
+//mod handler;
 mod high_level;
 mod kad_server;
 mod kbucket;
-mod layer;
+//mod layer;
 mod protobuf_structs;
 mod protocol;

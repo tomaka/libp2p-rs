@@ -164,6 +164,7 @@ pub mod simple;
 pub use self::core::{Transport, ConnectionUpgrade, PeerId};
 pub use self::multiaddr::Multiaddr;
 pub use self::simple::SimpleProtocol;
+pub use self::swarm_ext::SwarmLayerExt;
 pub use self::transport_timeout::TransportTimeout;
 
 /// Implementation of `Transport` that supports the most common protocols.
