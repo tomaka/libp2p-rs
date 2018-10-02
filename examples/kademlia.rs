@@ -147,6 +147,43 @@ fn main() {
                 let peer_store = peer_store.clone();
                 let kad_system = kad_system.clone();
                 let active_kad_connections = active_kad_connections.clone();
+<<<<<<< HEAD
+=======
+                node_addr.and_then(move |node_addr| {
+                    let node_id = p2p_multiaddr_to_node_id(node_addr);
+                    let node_id2 = node_id.clone();
+                    let fut = kad_stream.for_each(move |req| {
+                        let peer_store = peer_store.clone();
+                        kad_system.update_kbuckets(node_id2.clone());
+                        match req {
+                            KadIncomingRequest::FindNode { searched, responder } => {
+                                let result = kad_system
+                                    .known_closest_peers(&searched)
+                                    .map(move |peer_id| {
+                                        let addrs = peer_store
+                                            .peer(&peer_id)
+                                            .into_iter()
+                                            .flat_map(|p| p.addrs())
+                                            .collect::<Vec<_>>();
+                                        KadPeer {
+                                            node_id: peer_id.clone(),
+                                            multiaddrs: addrs,
+                                            connection_ty: KadConnectionType::Connected, // meh :-/
+                                        }
+                                    })
+                                    .collect::<Vec<_>>();
+                                responder.respond(result);
+                            },
+                            KadIncomingRequest::GetProviders { .. } => {
+                            },
+                            KadIncomingRequest::AddProvider { .. } => {
+                            },
+                            KadIncomingRequest::PingPong => {
+                            }
+                        };
+                        Ok(())
+                    });
+>>>>>>> upstream/master
 
                 let node_id = p2p_multiaddr_to_node_id(node_addr);
                 let node_id2 = node_id.clone();

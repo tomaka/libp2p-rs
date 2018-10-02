@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use futures::{prelude::*, task};
+use futures::prelude::*;
 use muxing;
 use smallvec::SmallVec;
 use std::fmt;
@@ -61,9 +61,6 @@ where
     outbound_finished: bool,
     /// List of substreams we are currently opening.
     outbound_substreams: SmallVec<[(TUserData, TMuxer::OutboundSubstream); 8]>,
-    /// Task to notify when a new element is added to `outbound_substreams`, so that we can start
-    /// polling it.
-    to_notify: Option<task::Task>,
 }
 
 /// A successfully opened substream.
@@ -115,7 +112,6 @@ where
             inbound_finished: false,
             outbound_finished: false,
             outbound_substreams: SmallVec::new(),
-            to_notify: None,
         }
     }
 
@@ -133,10 +129,6 @@ where
 
         let raw = self.muxer.open_outbound();
         self.outbound_substreams.push((user_data, raw));
-
-        if let Some(task) = self.to_notify.take() {
-            task.notify();
-        }
 
         Ok(())
     }
@@ -229,7 +221,6 @@ where
         }
 
         // Nothing happened. Register our task to be notified and return.
-        self.to_notify = Some(task::current());
         Ok(Async::NotReady)
     }
 }
