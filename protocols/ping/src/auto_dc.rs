@@ -21,7 +21,7 @@
 use futures::prelude::*;
 use libp2p_core::{ConnectionUpgrade, PeerId, nodes::protocol_handler::ProtocolHandler};
 use libp2p_core::nodes::protocol_handler::{ProtocolHandlerSelect, Either as ProtoHdlerEither};
-use libp2p_core::nodes::swarm::{ConnectedPoint, SwarmEvent};
+use libp2p_core::nodes::raw_swarm::{ConnectedPoint, SwarmEvent};
 use libp2p_core::nodes::swarm2::{SwarmLayer, PollOutcome};
 use libp2p_core::Transport;
 use std::collections::VecDeque;

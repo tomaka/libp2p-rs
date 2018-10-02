@@ -25,7 +25,7 @@ use nodes::handled_node::NodeHandler;
 use nodes::protocol_handler::{ProtocolHandler, DummyProtocolHandler, NodeHandlerWrapper};
 use nodes::listeners::{ListenersEvent, ListenersStream};
 use nodes::node::Substream;
-use nodes::swarm::{ConnectedPoint, Swarm, SwarmEvent, Peer, HandlerFactory};
+use nodes::raw_swarm::{ConnectedPoint, RawSwarm, SwarmEvent, Peer, HandlerFactory};
 use std::collections::{VecDeque, hash_map::{Entry, OccupiedEntry}};
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use std::marker::PhantomData;
@@ -39,7 +39,7 @@ where
     TTrans: Transport,
     TLayer: SwarmLayer<TTrans, TSubstream, TFinalOutEvent>,
 {
-    swarm: Swarm<TTrans, TInEvent, TOutEvent, LayerToHandlerBuild<TLayer, TTrans, TSubstream, TFinalOutEvent>>,
+    swarm: RawSwarm<TTrans, TInEvent, TOutEvent, LayerToHandlerBuild<TLayer, TTrans, TSubstream, TFinalOutEvent>>,
 }
 
 /// Layer for handling a swarm.
@@ -129,7 +129,7 @@ where
 {
     pub fn new(transport: TTrans, layer: TLayer) -> Self {
         Swarm2 {
-            swarm: Swarm::with_handler_builder(transport, LayerToHandlerBuild(layer, PhantomData)),
+            swarm: RawSwarm::with_handler_builder(transport, LayerToHandlerBuild(layer, PhantomData)),
         }
     }
 
