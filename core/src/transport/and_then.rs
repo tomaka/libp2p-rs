@@ -20,7 +20,7 @@
 
 use futures::prelude::*;
 use multiaddr::Multiaddr;
-use nodes::raw_swarm::ConnectedPoint;
+use nodes::swarm::ConnectedPoint;
 use std::io::Error as IoError;
 use transport::Transport;
 

@@ -93,10 +93,10 @@ extern crate tokio_io;
 extern crate tokio_timer;
 extern crate void;
 
-pub use self::auto_dc::*;
+//pub use self::auto_dc::*;
 pub use self::handler::*;
 pub use self::protocol::*;
 
-mod auto_dc;
+//mod auto_dc;
 mod handler;
 mod protocol;

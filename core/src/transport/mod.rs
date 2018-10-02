@@ -32,7 +32,7 @@
 use futures::prelude::*;
 use multiaddr::Multiaddr;
 use muxing::StreamMuxer;
-use nodes::raw_swarm::ConnectedPoint;
+use nodes::swarm::ConnectedPoint;
 use std::io::Error as IoError;
 use tokio_io::{AsyncRead, AsyncWrite};
 use upgrade::{ConnectionUpgrade, Endpoint};

@@ -157,14 +157,11 @@ pub extern crate libp2p_uds as uds;
 pub extern crate libp2p_websocket as websocket;
 pub extern crate libp2p_yamux as yamux;
 
-mod swarm_ext;
-
 pub mod simple;
 
 pub use self::core::{Transport, ConnectionUpgrade, PeerId};
 pub use self::multiaddr::Multiaddr;
 pub use self::simple::SimpleProtocol;
-pub use self::swarm_ext::SwarmLayerExt;
 pub use self::transport_timeout::TransportTimeout;
 
 /// Implementation of `Transport` that supports the most common protocols.
