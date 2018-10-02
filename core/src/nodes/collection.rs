@@ -274,7 +274,7 @@ impl<TInEvent, TOutEvent> CollectionStream<TInEvent, TOutEvent> {
         -> ReachAttemptId
     where
         TFut: Future<Item = (PeerId, TMuxer), Error = IoError> + Send + 'static,
-        THandler: NodeHandler<Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent> + Send + 'static,
+        THandler: NodeHandler<Substream = Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent> + Send + 'static,
         TInEvent: Send + 'static,
         TOutEvent: Send + 'static,
         THandler::OutboundOpenInfo: Send + 'static,     // TODO: shouldn't be required?

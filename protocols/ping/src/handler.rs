@@ -83,11 +83,12 @@ impl<TSubstream> PeriodicPingHandler<TSubstream> {
     }
 }
 
-impl<TSubstream> ProtocolHandler<TSubstream> for PeriodicPingHandler<TSubstream>
+impl<TSubstream> ProtocolHandler for PeriodicPingHandler<TSubstream>
 where TSubstream: AsyncRead + AsyncWrite,
 {
     type InEvent = Void;
     type OutEvent = OutEvent;
+    type Substream = TSubstream;
     type Protocol = Ping<Instant>;
     type OutboundOpenInfo = ();
 

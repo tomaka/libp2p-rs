@@ -30,11 +30,13 @@ use std::io::Error as IoError;
 // TODO: right now it is possible for a node handler to be built, then shut down right after if we
 //       realize we dialed the wrong peer for example ; this could be surprising and should either
 //       be documented or changed (favouring the "documented" right now)
-pub trait NodeHandler<TSubstream> {
+pub trait NodeHandler {
     /// Custom event that can be received from the outside.
     type InEvent;
     /// Custom event that can be produced by the handler and that will be returned by the swarm.
     type OutEvent;
+    /// The type of the substream containing the data.
+    type Substream;
     /// Information about a substream. Can be sent to the handler through a `NodeHandlerEndpoint`,
     /// and will be passed back in `inject_substream` or `inject_outbound_closed`.
     type OutboundOpenInfo;
@@ -42,7 +44,7 @@ pub trait NodeHandler<TSubstream> {
     /// Sends a new substream to the handler.
     ///
     /// The handler is responsible for upgrading the substream to whatever protocol it wants.
-    fn inject_substream(&mut self, substream: TSubstream, endpoint: NodeHandlerEndpoint<Self::OutboundOpenInfo>);
+    fn inject_substream(&mut self, substream: Self::Substream, endpoint: NodeHandlerEndpoint<Self::OutboundOpenInfo>);
 
     /// Indicates the handler that the inbound part of the muxer has been closed, and that
     /// therefore no more inbound substream will be produced.
@@ -118,7 +120,7 @@ impl<TOutboundOpenInfo, TCustom> NodeHandlerEvent<TOutboundOpenInfo, TCustom> {
 pub struct HandledNode<TMuxer, THandler>
 where
     TMuxer: StreamMuxer,
-    THandler: NodeHandler<Substream<TMuxer>>,
+    THandler: NodeHandler<Substream = Substream<TMuxer>>,
 {
     /// Node that handles the muxing. Can be `None` if the handled node is shutting down.
     node: Option<NodeStream<TMuxer, THandler::OutboundOpenInfo>>,
@@ -129,7 +131,7 @@ where
 impl<TMuxer, THandler> HandledNode<TMuxer, THandler>
 where
     TMuxer: StreamMuxer,
-    THandler: NodeHandler<Substream<TMuxer>>,
+    THandler: NodeHandler<Substream = Substream<TMuxer>>,
 {
     /// Builds a new `HandledNode`.
     #[inline]
@@ -186,7 +188,7 @@ where
 impl<TMuxer, THandler> Stream for HandledNode<TMuxer, THandler>
 where
     TMuxer: StreamMuxer,
-    THandler: NodeHandler<Substream<TMuxer>>,
+    THandler: NodeHandler<Substream = Substream<TMuxer>>,
 {
     type Item = THandler::OutEvent;
     type Error = IoError;
@@ -258,6 +260,7 @@ mod tests {
     use super::*;
     use futures::future;
     use muxing::StreamMuxer;
+    use std::marker::PhantomData;
     use tokio::runtime::current_thread;
 
     // TODO: move somewhere? this could be useful as a dummy
@@ -281,15 +284,17 @@ mod tests {
     #[test]
     fn proper_shutdown() {
         // Test that `shutdown()` is properly called on the handler once a node stops.
-        struct Handler {
+        struct Handler<T> {
             did_substream_attempt: bool,
             inbound_closed: bool,
             substream_attempt_cancelled: bool,
             shutdown_called: bool,
+            marker: PhantomData<T>,
         };
-        impl<T> NodeHandler<T> for Handler {
+        impl<T> NodeHandler for Handler<T> {
             type InEvent = ();
             type OutEvent = ();
+            type Substream = T;
             type OutboundOpenInfo = ();
             fn inject_substream(&mut self, _: T, _: NodeHandlerEndpoint<()>) { panic!() }
             fn inject_inbound_closed(&mut self) {
@@ -317,7 +322,7 @@ mod tests {
                 }
             }
         }
-        impl Drop for Handler {
+        impl<T> Drop for Handler<T> {
             fn drop(&mut self) {
                 assert!(self.shutdown_called);
             }
@@ -328,6 +333,7 @@ mod tests {
             inbound_closed: false,
             substream_attempt_cancelled: false,
             shutdown_called: false,
+            marker: PhantomData,
         });
 
         current_thread::Runtime::new().unwrap().block_on(handled.for_each(|_| Ok(()))).unwrap();

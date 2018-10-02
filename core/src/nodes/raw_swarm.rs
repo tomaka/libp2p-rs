@@ -377,7 +377,7 @@ where
     TTrans: Transport<Output = (PeerId, TMuxer)> + Clone,
     TMuxer: StreamMuxer,
     THandlerBuild: HandlerFactory<Handler = THandler>,
-    THandler: NodeHandler<Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent> + Send + 'static,
+    THandler: NodeHandler<Substream = Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent> + Send + 'static,
     THandler::OutboundOpenInfo: Send + 'static, // TODO: shouldn't be necessary
 {
     /// Creates a new node events stream.
@@ -596,7 +596,7 @@ where
         TInEvent: Send + 'static,
         TOutEvent: Send + 'static,
         THandlerBuild: HandlerFactory<Handler = THandler>,
-        THandler: NodeHandler<Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent> + Send + 'static,
+        THandler: NodeHandler<Substream = Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent> + Send + 'static,
         THandler::OutboundOpenInfo: Send + 'static, // TODO: shouldn't be necessary
     {
         // Start by polling the listeners for events.
@@ -939,7 +939,7 @@ where
     TTrans: Transport<Output = (PeerId, TMuxer)>,
     TMuxer: StreamMuxer,
     THandlerBuild: HandlerFactory<Handler = THandler>,
-    THandler: NodeHandler<Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent> + Send + 'static,
+    THandler: NodeHandler<Substream = Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent> + Send + 'static,
     THandler::OutboundOpenInfo: Send + 'static, // TODO: shouldn't be necessary
 {
     /// If we are connected, returns the `PeerConnected`.
@@ -1154,7 +1154,7 @@ where
     TTrans: Transport<Output = (PeerId, TMuxer)>,
     TMuxer: StreamMuxer,
     THandlerBuild: HandlerFactory<Handler = THandler>,
-    THandler: NodeHandler<Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent> + Send + 'static,
+    THandler: NodeHandler<Substream = Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent> + Send + 'static,
     THandler::OutboundOpenInfo: Send + 'static, // TODO: shouldn't be necessary
 {
     /// Attempts a new connection to this node using the given multiaddress.
@@ -1239,7 +1239,7 @@ where
     TInEvent: Send + 'static,
     TOutEvent: Send + 'static,
     THandlerBuild: HandlerFactory<Handler = THandler>,
-    THandler: NodeHandler<Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent> + Send + 'static,
+    THandler: NodeHandler<Substream = Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent> + Send + 'static,
     THandler::OutboundOpenInfo: Send + 'static, // TODO: shouldn't be necessary
 {
     type Item = SwarmEvent<TTrans, TOutEvent>;

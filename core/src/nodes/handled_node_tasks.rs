@@ -134,7 +134,7 @@ impl<TInEvent, TOutEvent> HandledNodesTasks<TInEvent, TOutEvent> {
         -> TaskId
     where
         TFut: Future<Item = (PeerId, TMuxer), Error = IoError> + Send + 'static,
-        THandler: NodeHandler<Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent> + Send + 'static,
+        THandler: NodeHandler<Substream = Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent> + Send + 'static,
         TInEvent: Send + 'static,
         TOutEvent: Send + 'static,
         THandler::OutboundOpenInfo: Send + 'static,     // TODO: shouldn't be required?
@@ -304,7 +304,7 @@ enum InToExtMessage<TOutEvent> {
 struct NodeTask<TFut, TMuxer, THandler, TInEvent, TOutEvent>
 where
     TMuxer: StreamMuxer,
-    THandler: NodeHandler<Substream<TMuxer>>,
+    THandler: NodeHandler<Substream = Substream<TMuxer>>,
 {
     /// Sender to transmit events to the outside.
     events_tx: mpsc::UnboundedSender<(InToExtMessage<TOutEvent>, TaskId)>,
@@ -319,7 +319,7 @@ where
 enum NodeTaskInner<TFut, TMuxer, THandler, TInEvent>
 where
     TMuxer: StreamMuxer,
-    THandler: NodeHandler<Substream<TMuxer>>,
+    THandler: NodeHandler<Substream = Substream<TMuxer>>,
 {
     /// Future to resolve to connect to the node.
     Future {
@@ -345,7 +345,7 @@ impl<TFut, TMuxer, THandler, TInEvent, TOutEvent> Future for
 where
     TMuxer: StreamMuxer,
     TFut: Future<Item = (PeerId, TMuxer), Error = IoError>,
-    THandler: NodeHandler<Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent>,
+    THandler: NodeHandler<Substream = Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent>,
 {
     type Item = ();
     type Error = ();

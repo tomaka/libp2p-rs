@@ -22,6 +22,7 @@ use either::EitherOutput;
 use futures::prelude::*;
 use nodes::handled_node::{NodeHandler, NodeHandlerEndpoint, NodeHandlerEvent};
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
+use std::marker::PhantomData;
 use tokio_io::{AsyncRead, AsyncWrite};
 use upgrade::{self, apply::UpgradeApplyFuture, choice::OrUpgrade, map::Map as UpgradeMap};
 use upgrade::{DeniedConnectionUpgrade, toggleable::Toggleable};
@@ -30,13 +31,15 @@ use {ConnectionUpgrade, Endpoint};
 
 /// Handler for a protocol.
 // TODO: add upgrade timeout system
-pub trait ProtocolHandler<TSubstream> {
+pub trait ProtocolHandler {
     /// Custom event that can be received from the outside.
     type InEvent;
     /// Custom event that can be produced by the handler and that will be returned by the swarm.
     type OutEvent;
+    /// The substream for raw data.
+    type Substream: AsyncRead + AsyncWrite;
     /// The protocol or protocols handled by this handler.
-    type Protocol: ConnectionUpgrade<TSubstream>;
+    type Protocol: ConnectionUpgrade<Self::Substream>;
     /// Information about a substream. Can be sent to the handler through a `NodeHandlerEndpoint`,
     /// and will be passed back in `inject_substream` or `inject_outbound_closed`.
     type OutboundOpenInfo;
@@ -45,7 +48,7 @@ pub trait ProtocolHandler<TSubstream> {
     fn listen_protocol(&self) -> Self::Protocol;
 
     /// Injects a fully-negotiated substream in the handler.
-    fn inject_fully_negotiated(&mut self, protocol: <Self::Protocol as ConnectionUpgrade<TSubstream>>::Output, endpoint: NodeHandlerEndpoint<Self::OutboundOpenInfo>);
+    fn inject_fully_negotiated(&mut self, protocol: <Self::Protocol as ConnectionUpgrade<Self::Substream>>::Output, endpoint: NodeHandlerEndpoint<Self::OutboundOpenInfo>);
 
     /// Injects an event coming from the outside in the handler.
     fn inject_event(&mut self, event: Self::InEvent);
@@ -81,9 +84,8 @@ pub trait ProtocolHandler<TSubstream> {
 
     /// Builds a `NodeHandlerWrapper`.
     #[inline]
-    fn into_node_handler(self) -> NodeHandlerWrapper<TSubstream, Self>
-    where Self: Sized,
-          TSubstream: AsyncRead + AsyncWrite,
+    fn into_node_handler(self) -> NodeHandlerWrapper<Self>
+    where Self: Sized
     {
         NodeHandlerWrapper {
             handler: self,
@@ -95,24 +97,27 @@ pub trait ProtocolHandler<TSubstream> {
 }
 
 /// Implementation of `ProtocolHandler` that doesn't handle anything.
-pub struct DummyProtocolHandler {
+pub struct DummyProtocolHandler<TSubstream> {
     shutting_down: bool,
+    marker: PhantomData<TSubstream>,
 }
 
-impl Default for DummyProtocolHandler {
+impl<TSubstream> Default for DummyProtocolHandler<TSubstream> {
     #[inline]
     fn default() -> Self {
         DummyProtocolHandler {
             shutting_down: false,
+            marker: PhantomData,
         }
     }
 }
 
-impl<TSubstream> ProtocolHandler<TSubstream> for DummyProtocolHandler
+impl<TSubstream> ProtocolHandler for DummyProtocolHandler<TSubstream>
 where TSubstream: AsyncRead + AsyncWrite
 {
     type InEvent = Void;
     type OutEvent = Void;
+    type Substream = TSubstream;
     type Protocol = DeniedConnectionUpgrade;
     type OutboundOpenInfo = Void;
 
@@ -147,27 +152,26 @@ where TSubstream: AsyncRead + AsyncWrite
 }
 
 /// Wraps around an implementation of `ProtocolHandler`, and implements `NodeHandler`.
-pub struct NodeHandlerWrapper<TSubstream, TProtoHandler>
-where TProtoHandler: ProtocolHandler<TSubstream>,
-      TSubstream: AsyncRead + AsyncWrite,
+pub struct NodeHandlerWrapper<TProtoHandler>
+where TProtoHandler: ProtocolHandler
 {
     handler: TProtoHandler,
-    negotiating_in: Vec<UpgradeApplyFuture<TSubstream, TProtoHandler::Protocol>>,
-    negotiating_out: Vec<(TProtoHandler::OutboundOpenInfo, UpgradeApplyFuture<TSubstream, TProtoHandler::Protocol>)>,
+    negotiating_in: Vec<UpgradeApplyFuture<TProtoHandler::Substream, TProtoHandler::Protocol>>,
+    negotiating_out: Vec<(TProtoHandler::OutboundOpenInfo, UpgradeApplyFuture<TProtoHandler::Substream, TProtoHandler::Protocol>)>,
     // For each outbound substream request, how to upgrade it.
     queued_dial_upgrades: Vec<TProtoHandler::Protocol>,
 }
 
-impl<TSubstream, TProtoHandler> NodeHandler<TSubstream> for NodeHandlerWrapper<TSubstream, TProtoHandler>
-where TProtoHandler: ProtocolHandler<TSubstream>,
-      <TProtoHandler::Protocol as ConnectionUpgrade<TSubstream>>::NamesIter: Clone,
-      TSubstream: AsyncRead + AsyncWrite,
+impl<TProtoHandler> NodeHandler for NodeHandlerWrapper<TProtoHandler>
+where TProtoHandler: ProtocolHandler,
+      <TProtoHandler::Protocol as ConnectionUpgrade<TProtoHandler::Substream>>::NamesIter: Clone,
 {
     type InEvent = TProtoHandler::InEvent;
     type OutEvent = TProtoHandler::OutEvent;
+    type Substream = TProtoHandler::Substream;
     type OutboundOpenInfo = TProtoHandler::OutboundOpenInfo;
 
-    fn inject_substream(&mut self, substream: TSubstream, endpoint: NodeHandlerEndpoint<Self::OutboundOpenInfo>) {
+    fn inject_substream(&mut self, substream: Self::Substream, endpoint: NodeHandlerEndpoint<Self::OutboundOpenInfo>) {
         match endpoint {
             NodeHandlerEndpoint::Listener => {
                 let protocol = self.handler.listen_protocol();
@@ -279,9 +283,9 @@ pub struct ProtocolHandlerSelect<TProto1, TProto2> {
 }
 
 impl<TSubstream, TProto1, TProto2, TProto1Out, TProto2Out>
-    ProtocolHandler<TSubstream> for ProtocolHandlerSelect<TProto1, TProto2>
-where TProto1: ProtocolHandler<TSubstream>,
-      TProto2: ProtocolHandler<TSubstream>,
+    ProtocolHandler for ProtocolHandlerSelect<TProto1, TProto2>
+where TProto1: ProtocolHandler<Substream = TSubstream>,
+      TProto2: ProtocolHandler<Substream = TSubstream>,
       TSubstream: AsyncRead + AsyncWrite,
       TProto1::Protocol: ConnectionUpgrade<TSubstream, Output = TProto1Out>,
       TProto2::Protocol: ConnectionUpgrade<TSubstream, Output = TProto2Out>,
@@ -292,6 +296,7 @@ where TProto1: ProtocolHandler<TSubstream>,
 {
     type InEvent = Either<TProto1::InEvent, TProto2::InEvent>;
     type OutEvent = Either<TProto1::OutEvent, TProto2::OutEvent>;
+    type Substream = TSubstream;
     type Protocol = OrUpgrade<Toggleable<UpgradeMap<TProto1::Protocol, fn(TProto1Out) -> EitherOutput<TProto1Out, TProto2Out>>>, Toggleable<UpgradeMap<TProto2::Protocol, fn(TProto2Out) -> EitherOutput<TProto1Out, TProto2Out>>>>;
     type OutboundOpenInfo = Either<TProto1::OutboundOpenInfo, TProto2::OutboundOpenInfo>;
 

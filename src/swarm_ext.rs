@@ -24,7 +24,7 @@ use ping;
 
 /// Trait automatically implemented on all objects that implement `SwarmLayer`. Provides some
 /// additional utilities.
-pub trait SwarmLayerExt<TTrans, TSubstream, TFinalOutEvent>: SwarmLayer<TTrans, TSubstream, TFinalOutEvent>
+pub trait SwarmLayerExt<TTrans, TFinalOutEvent>: SwarmLayer<TTrans, TFinalOutEvent>
 where TTrans: Transport
 {
     /// Appends a layer that automatically disconnects nodes if they stop responding to a
@@ -36,7 +36,7 @@ where TTrans: Transport
     }
 }
 
-impl<TLayer, TTrans, TSubstream, TFinalOutEvent> SwarmLayerExt<TTrans, TSubstream, TFinalOutEvent> for TLayer
-where TLayer: SwarmLayer<TTrans, TSubstream, TFinalOutEvent>,
+impl<TLayer, TTrans, TFinalOutEvent> SwarmLayerExt<TTrans, TFinalOutEvent> for TLayer
+where TLayer: SwarmLayer<TTrans, TFinalOutEvent>,
       TTrans: Transport,
 {}

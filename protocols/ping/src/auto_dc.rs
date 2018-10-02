@@ -47,12 +47,14 @@ impl<TInner> AutoDcLayer<TInner> {
     }
 }
 
-impl<TInner, TTrans, TSubstream, TOutEvent> SwarmLayer<TTrans, TSubstream, TOutEvent> for AutoDcLayer<TInner>
-where TInner: SwarmLayer<TTrans, TSubstream, TOutEvent>,
+impl<TInner, TTrans, TSubstream, TOutEvent> SwarmLayer<TTrans, TOutEvent> for AutoDcLayer<TInner>
+where TInner: SwarmLayer<TTrans, TOutEvent>,
       TOutEvent: From<AutoDcLayerEvent>,
       // TODO: too many bounds
-      <<TInner::Handler as ProtocolHandler<TSubstream>>::Protocol as ConnectionUpgrade<TSubstream>>::Future: Send + 'static,
-      <<TInner::Handler as ProtocolHandler<TSubstream>>::Protocol as ConnectionUpgrade<TSubstream>>::Output: Send + 'static,
+      TInner::Handler: ProtocolHandler<Substream = TSubstream>,
+      <TInner::Handler as ProtocolHandler>::Protocol: ConnectionUpgrade<TSubstream>,
+      <<TInner::Handler as ProtocolHandler>::Protocol as ConnectionUpgrade<TSubstream>>::Future: Send + 'static,
+      <<TInner::Handler as ProtocolHandler>::Protocol as ConnectionUpgrade<TSubstream>>::Output: Send + 'static,
       TTrans: Transport,
       TSubstream: AsyncRead + AsyncWrite + Send + 'static,  // TODO: useless bounds
 {
@@ -64,7 +66,7 @@ where TInner: SwarmLayer<TTrans, TSubstream, TOutEvent>,
             .select(self.inner.new_handler(connected_point))
     }
 
-    fn inject_swarm_event(&mut self, event: SwarmEvent<TTrans, <Self::Handler as ProtocolHandler<TSubstream>>::OutEvent>) {
+    fn inject_swarm_event(&mut self, event: SwarmEvent<TTrans, <Self::Handler as ProtocolHandler>::OutEvent>) {
         let inner_event = event
             .filter_map_out_event(|peer_id, event| {
                 match event {

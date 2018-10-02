@@ -23,6 +23,7 @@ use libp2p_core::{ConnectionUpgrade, Multiaddr, nodes::protocol_handler::Protoco
 use libp2p_core::nodes::handled_node::{NodeHandlerEvent, NodeHandlerEndpoint};
 use libp2p_core::upgrade::{self, toggleable::Toggleable};
 use std::io;
+use std::marker::PhantomData;
 use std::time::{Duration, Instant};
 use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_timer::Delay;
@@ -35,7 +36,7 @@ const DELAY_TO_FIRST_ID: Duration = Duration::from_millis(500);
 const DELAY_TO_NEXT_ID: Duration = Duration::from_secs(5 * 60);
 
 /// Protocol handler that identifies the remote at a regular period.
-pub struct PeriodicIdentification {
+pub struct PeriodicIdentification<TSubstream> {
     /// Configuration for the protocol.
     config: Toggleable<IdentifyProtocolConfig>,
 
@@ -46,6 +47,9 @@ pub struct PeriodicIdentification {
     /// Future that fires when we need to identify the node again. If `None`, means that we should
     /// shut down.
     next_id: Option<Delay>,
+
+    /// Marker for strong typing.
+    marker: PhantomData<TSubstream>,
 }
 
 /// Event produced by the periodic identifier.
@@ -60,22 +64,25 @@ pub enum OutEvent {
 	},
 }
 
-impl PeriodicIdentification {
+impl<TSubstream> PeriodicIdentification<TSubstream> {
     /// Builds a new `PeriodicIdentification`.
-    pub fn new() -> PeriodicIdentification {
+    #[inline]
+    pub fn new() -> Self {
         PeriodicIdentification {
             config: upgrade::toggleable(IdentifyProtocolConfig),
             pending_result: None,
             next_id: Some(Delay::new(Instant::now() + DELAY_TO_FIRST_ID)),
+            marker: PhantomData,
         }
     }
 }
 
-impl<TSubstream> ProtocolHandler<TSubstream> for PeriodicIdentification
+impl<TSubstream> ProtocolHandler for PeriodicIdentification<TSubstream>
 where TSubstream: AsyncRead + AsyncWrite + Send + Sync + 'static,   // TODO: remove useless bounds
 {
     type InEvent = Void;
     type OutEvent = OutEvent;
+    type Substream = TSubstream;
     type Protocol = Toggleable<IdentifyProtocolConfig>;
     type OutboundOpenInfo = ();
 
