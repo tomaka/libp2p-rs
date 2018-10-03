@@ -30,7 +30,7 @@ use futures::future::Future;
 use futures::{Sink, Stream};
 use std::sync::{Arc, mpsc};
 use std::thread;
-use swarm::{muxing, Transport};
+use raw_swarm::{muxing, Transport};
 use tcp::TcpConfig;
 use tokio_io::codec::length_delimited::Framed;
 

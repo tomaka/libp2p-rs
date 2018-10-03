@@ -420,7 +420,7 @@ mod tests {
     use multiaddr::Multiaddr;
     use std;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-    use swarm::Transport;
+    use raw_swarm::Transport;
     use tokio_current_thread;
     use tokio_io;
 

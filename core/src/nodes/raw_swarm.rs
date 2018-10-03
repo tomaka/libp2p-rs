@@ -33,7 +33,7 @@ use void::Void;
 use {Endpoint, Multiaddr, PeerId, Transport};
 
 /// Implementation of `Stream` that handles the nodes.
-pub struct Swarm<TTrans, TInEvent, TOutEvent, THandlerBuild>
+pub struct RawSwarm<TTrans, TInEvent, TOutEvent, THandlerBuild>
 where
     TTrans: Transport,
 {
@@ -74,7 +74,7 @@ struct OutReachAttempt {
     next_attempts: Vec<Multiaddr>,
 }
 
-/// Event that can happen on the `Swarm`.
+/// Event that can happen on the `RawSwarm`.
 pub enum SwarmEvent<TTrans, TOutEvent>
 where
     TTrans: Transport,
@@ -372,7 +372,7 @@ impl<T, THandler> HandlerFactory for T where T: Fn(ConnectedPoint) -> THandler {
 }
 
 impl<TTrans, TInEvent, TOutEvent, TMuxer, THandler, THandlerBuild>
-    Swarm<TTrans, TInEvent, TOutEvent, THandlerBuild>
+    RawSwarm<TTrans, TInEvent, TOutEvent, THandlerBuild>
 where
     TTrans: Transport<Output = (PeerId, TMuxer)> + Clone,
     TMuxer: StreamMuxer,
@@ -382,11 +382,11 @@ where
 {
     /// Creates a new node events stream.
     #[inline]
-    pub fn new(transport: TTrans) -> Swarm<TTrans, TInEvent, TOutEvent, fn() -> THandler>
+    pub fn new(transport: TTrans) -> RawSwarm<TTrans, TInEvent, TOutEvent, fn() -> THandler>
     where THandler: Default,
     {
         // TODO: with_capacity?
-        Swarm {
+        RawSwarm {
             listeners: ListenersStream::new(transport),
             active_nodes: CollectionStream::new(),
             reach_attempts: ReachAttempts {
@@ -402,7 +402,7 @@ where
     #[inline]
     pub fn with_handler_builder(transport: TTrans, handler_build: THandlerBuild) -> Self {
         // TODO: with_capacity?
-        Swarm {
+        RawSwarm {
             listeners: ListenersStream::new(transport),
             active_nodes: CollectionStream::new(),
             reach_attempts: ReachAttempts {
@@ -1145,7 +1145,7 @@ where
     TTrans: Transport,
 {
     peer_id: PeerId,
-    nodes: &'a mut Swarm<TTrans, TInEvent, TOutEvent, THandlerBuild>,
+    nodes: &'a mut RawSwarm<TTrans, TInEvent, TOutEvent, THandlerBuild>,
 }
 
 impl<'a, TTrans, TInEvent, TOutEvent, TMuxer, THandler, THandlerBuild>
@@ -1228,7 +1228,7 @@ where
 }
 
 impl<TTrans, TMuxer, TInEvent, TOutEvent, THandler, THandlerBuild> Stream for
-    Swarm<TTrans, TInEvent, TOutEvent, THandlerBuild>
+    RawSwarm<TTrans, TInEvent, TOutEvent, THandlerBuild>
 where
     TTrans: Transport<Output = (PeerId, TMuxer)> + Clone,
     TTrans::Dial: Send + 'static,

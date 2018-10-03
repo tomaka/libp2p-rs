@@ -57,8 +57,8 @@ fn main() {
             upgrade::apply(out.stream, upgrade, endpoint.into())
         });
 
-    let layer = libp2p::ping::AutoDcLayer::new(libp2p::core::nodes::swarm::BaseSwarmLayer::default());
-    let mut swarm = libp2p::core::nodes::swarm::Swarm::new(transport, layer);
+    let layer = libp2p::ping::AutoDcLayer::new(libp2p::core::nodes::raw_swarm::BaseSwarmLayer::default());
+    let mut swarm = libp2p::core::nodes::raw_swarm::Swarm::new(transport, layer);
 
     // We now use the controller to dial to the address.
     swarm

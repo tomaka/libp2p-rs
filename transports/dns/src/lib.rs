@@ -228,7 +228,7 @@ mod tests {
     use futures::future;
     use multiaddr::{Protocol, Multiaddr};
     use std::io::Error as IoError;
-    use swarm::Transport;
+    use raw_swarm::Transport;
     use DnsConfig;
 
     #[test]

@@ -280,7 +280,7 @@ mod tests {
     extern crate tokio_current_thread;
     use futures::{Future, Stream};
     use multiaddr::Multiaddr;
-    use swarm::Transport;
+    use raw_swarm::Transport;
     use WsConfig;
 
     #[test]
