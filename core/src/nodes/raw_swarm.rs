@@ -75,7 +75,7 @@ struct OutReachAttempt {
 }
 
 /// Event that can happen on the `RawSwarm`.
-pub enum SwarmEvent<TTrans, TOutEvent>
+pub enum RawSwarmEvent<TTrans, TOutEvent>
 where
     TTrans: Transport,
 {
@@ -200,90 +200,90 @@ where
     },
 }
 
-impl<TTrans, TOutEvent> SwarmEvent<TTrans, TOutEvent>
+impl<TTrans, TOutEvent> RawSwarmEvent<TTrans, TOutEvent>
 where
     TTrans: Transport,
 {
     /// Turns the custom node event into a different custom node event.
-    pub fn map_out_event<TMap, TNewOut>(self, map: TMap) -> SwarmEvent<TTrans, TNewOut>
+    pub fn map_out_event<TMap, TNewOut>(self, map: TMap) -> RawSwarmEvent<TTrans, TNewOut>
     where TMap: FnOnce(&PeerId, TOutEvent) -> TNewOut
     {
         match self {
-            SwarmEvent::ListenerClosed { listen_addr, listener, result } => {
-                SwarmEvent::ListenerClosed { listen_addr, listener, result }
+            RawSwarmEvent::ListenerClosed { listen_addr, listener, result } => {
+                RawSwarmEvent::ListenerClosed { listen_addr, listener, result }
             },
-            SwarmEvent::IncomingConnection { listen_addr, send_back_addr } => {
-                SwarmEvent::IncomingConnection { listen_addr, send_back_addr }
+            RawSwarmEvent::IncomingConnection { listen_addr, send_back_addr } => {
+                RawSwarmEvent::IncomingConnection { listen_addr, send_back_addr }
             },
-            SwarmEvent::IncomingConnectionError { listen_addr, send_back_addr, error } => {
-                SwarmEvent::IncomingConnectionError { listen_addr, send_back_addr, error }
+            RawSwarmEvent::IncomingConnectionError { listen_addr, send_back_addr, error } => {
+                RawSwarmEvent::IncomingConnectionError { listen_addr, send_back_addr, error }
             },
-            SwarmEvent::Connected { peer_id, endpoint } => {
-                SwarmEvent::Connected { peer_id, endpoint }
+            RawSwarmEvent::Connected { peer_id, endpoint } => {
+                RawSwarmEvent::Connected { peer_id, endpoint }
             },
-            SwarmEvent::Replaced { peer_id, closed_multiaddr, endpoint } => {
-                SwarmEvent::Replaced { peer_id, closed_multiaddr, endpoint }
+            RawSwarmEvent::Replaced { peer_id, closed_multiaddr, endpoint } => {
+                RawSwarmEvent::Replaced { peer_id, closed_multiaddr, endpoint }
             },
-            SwarmEvent::NodeClosed { peer_id, address } => {
-                SwarmEvent::NodeClosed { peer_id, address }
+            RawSwarmEvent::NodeClosed { peer_id, address } => {
+                RawSwarmEvent::NodeClosed { peer_id, address }
             },
-            SwarmEvent::NodeError { peer_id, address, error } => {
-                SwarmEvent::NodeError { peer_id, address, error }
+            RawSwarmEvent::NodeError { peer_id, address, error } => {
+                RawSwarmEvent::NodeError { peer_id, address, error }
             },
-            SwarmEvent::DialError { remain_addrs_attempt, peer_id, multiaddr, error } => {
-                SwarmEvent::DialError { remain_addrs_attempt, peer_id, multiaddr, error }
+            RawSwarmEvent::DialError { remain_addrs_attempt, peer_id, multiaddr, error } => {
+                RawSwarmEvent::DialError { remain_addrs_attempt, peer_id, multiaddr, error }
             },
-            SwarmEvent::UnknownPeerDialError { multiaddr, error } => {
-                SwarmEvent::UnknownPeerDialError { multiaddr, error }
+            RawSwarmEvent::UnknownPeerDialError { multiaddr, error } => {
+                RawSwarmEvent::UnknownPeerDialError { multiaddr, error }
             },
-            SwarmEvent::PublicKeyMismatch { expected_peer_id, actual_peer_id, multiaddr, remain_addrs_attempt } => {
-                SwarmEvent::PublicKeyMismatch { expected_peer_id, actual_peer_id, multiaddr, remain_addrs_attempt }
+            RawSwarmEvent::PublicKeyMismatch { expected_peer_id, actual_peer_id, multiaddr, remain_addrs_attempt } => {
+                RawSwarmEvent::PublicKeyMismatch { expected_peer_id, actual_peer_id, multiaddr, remain_addrs_attempt }
             },
-            SwarmEvent::NodeEvent { peer_id, event } => {
+            RawSwarmEvent::NodeEvent { peer_id, event } => {
                 let new_ev = map(&peer_id, event);
-                SwarmEvent::NodeEvent { peer_id, event: new_ev }
+                RawSwarmEvent::NodeEvent { peer_id, event: new_ev }
             },
         }
     }
 
     /// Turns the custom node event into a different custom node event.
-    pub fn filter_map_out_event<TMap, TNewOut>(self, map: TMap) -> Option<SwarmEvent<TTrans, TNewOut>>
+    pub fn filter_map_out_event<TMap, TNewOut>(self, map: TMap) -> Option<RawSwarmEvent<TTrans, TNewOut>>
     where TMap: FnOnce(&PeerId, TOutEvent) -> Option<TNewOut>
     {
         match self {
-            SwarmEvent::ListenerClosed { listen_addr, listener, result } => {
-                Some(SwarmEvent::ListenerClosed { listen_addr, listener, result })
+            RawSwarmEvent::ListenerClosed { listen_addr, listener, result } => {
+                Some(RawSwarmEvent::ListenerClosed { listen_addr, listener, result })
             },
-            SwarmEvent::IncomingConnection { listen_addr, send_back_addr } => {
-                Some(SwarmEvent::IncomingConnection { listen_addr, send_back_addr })
+            RawSwarmEvent::IncomingConnection { listen_addr, send_back_addr } => {
+                Some(RawSwarmEvent::IncomingConnection { listen_addr, send_back_addr })
             },
-            SwarmEvent::IncomingConnectionError { listen_addr, send_back_addr, error } => {
-                Some(SwarmEvent::IncomingConnectionError { listen_addr, send_back_addr, error })
+            RawSwarmEvent::IncomingConnectionError { listen_addr, send_back_addr, error } => {
+                Some(RawSwarmEvent::IncomingConnectionError { listen_addr, send_back_addr, error })
             },
-            SwarmEvent::Connected { peer_id, endpoint } => {
-                Some(SwarmEvent::Connected { peer_id, endpoint })
+            RawSwarmEvent::Connected { peer_id, endpoint } => {
+                Some(RawSwarmEvent::Connected { peer_id, endpoint })
             },
-            SwarmEvent::Replaced { peer_id, closed_multiaddr, endpoint } => {
-                Some(SwarmEvent::Replaced { peer_id, closed_multiaddr, endpoint })
+            RawSwarmEvent::Replaced { peer_id, closed_multiaddr, endpoint } => {
+                Some(RawSwarmEvent::Replaced { peer_id, closed_multiaddr, endpoint })
             },
-            SwarmEvent::NodeClosed { peer_id, address } => {
-                Some(SwarmEvent::NodeClosed { peer_id, address })
+            RawSwarmEvent::NodeClosed { peer_id, address } => {
+                Some(RawSwarmEvent::NodeClosed { peer_id, address })
             },
-            SwarmEvent::NodeError { peer_id, address, error } => {
-                Some(SwarmEvent::NodeError { peer_id, address, error })
+            RawSwarmEvent::NodeError { peer_id, address, error } => {
+                Some(RawSwarmEvent::NodeError { peer_id, address, error })
             },
-            SwarmEvent::DialError { remain_addrs_attempt, peer_id, multiaddr, error } => {
-                Some(SwarmEvent::DialError { remain_addrs_attempt, peer_id, multiaddr, error })
+            RawSwarmEvent::DialError { remain_addrs_attempt, peer_id, multiaddr, error } => {
+                Some(RawSwarmEvent::DialError { remain_addrs_attempt, peer_id, multiaddr, error })
             },
-            SwarmEvent::UnknownPeerDialError { multiaddr, error } => {
-                Some(SwarmEvent::UnknownPeerDialError { multiaddr, error })
+            RawSwarmEvent::UnknownPeerDialError { multiaddr, error } => {
+                Some(RawSwarmEvent::UnknownPeerDialError { multiaddr, error })
             },
-            SwarmEvent::PublicKeyMismatch { expected_peer_id, actual_peer_id, multiaddr, remain_addrs_attempt } => {
-                Some(SwarmEvent::PublicKeyMismatch { expected_peer_id, actual_peer_id, multiaddr, remain_addrs_attempt })
+            RawSwarmEvent::PublicKeyMismatch { expected_peer_id, actual_peer_id, multiaddr, remain_addrs_attempt } => {
+                Some(RawSwarmEvent::PublicKeyMismatch { expected_peer_id, actual_peer_id, multiaddr, remain_addrs_attempt })
             },
-            SwarmEvent::NodeEvent { peer_id, event } => {
+            RawSwarmEvent::NodeEvent { peer_id, event } => {
                 if let Some(new_ev) = map(&peer_id, event) {
-                    Some(SwarmEvent::NodeEvent { peer_id, event: new_ev })
+                    Some(RawSwarmEvent::NodeEvent { peer_id, event: new_ev })
                 } else {
                     None
                 }
@@ -585,7 +585,8 @@ where
     }
 
     /// Provides an API similar to `Stream`, except that it cannot error.
-    pub fn poll(&mut self) -> Async<Option<SwarmEvent<TTrans, TOutEvent>>>
+    // TODO: why Option?
+    pub fn poll(&mut self) -> Async<Option<RawSwarmEvent<TTrans, TOutEvent>>>
     where
         TTrans: Transport<Output = (PeerId, TMuxer)> + Clone,
         TTrans::Dial: Send + 'static,
@@ -617,7 +618,7 @@ where
                     id,
                     connected_point,
                 ));
-                return Async::Ready(Some(SwarmEvent::IncomingConnection {
+                return Async::Ready(Some(RawSwarmEvent::IncomingConnection {
                     listen_addr,
                     send_back_addr,
                 }));
@@ -627,7 +628,7 @@ where
                 listener,
                 result,
             })) => {
-                return Async::Ready(Some(SwarmEvent::ListenerClosed {
+                return Async::Ready(Some(RawSwarmEvent::ListenerClosed {
                     listen_addr,
                     listener,
                     result,
@@ -658,7 +659,7 @@ where
                     let address = self.reach_attempts.connected_multiaddresses.remove(&peer_id);
                     debug_assert!(!self.reach_attempts.out_reach_attempts.contains_key(&peer_id));
                     action = Default::default();
-                    out_event = SwarmEvent::NodeError {
+                    out_event = RawSwarmEvent::NodeError {
                         peer_id,
                         address,
                         error,
@@ -668,11 +669,11 @@ where
                     let address = self.reach_attempts.connected_multiaddresses.remove(&peer_id);
                     debug_assert!(!self.reach_attempts.out_reach_attempts.contains_key(&peer_id));
                     action = Default::default();
-                    out_event = SwarmEvent::NodeClosed { peer_id, address };
+                    out_event = RawSwarmEvent::NodeClosed { peer_id, address };
                 }
                 Async::Ready(Some(CollectionEvent::NodeEvent { peer_id, event })) => {
                     action = Default::default();
-                    out_event = SwarmEvent::NodeEvent { peer_id, event };
+                    out_event = RawSwarmEvent::NodeEvent { peer_id, event };
                 }
                 Async::Ready(None) => unreachable!("CollectionStream never ends"),
             };
@@ -717,7 +718,7 @@ struct ActionItem {
 fn handle_node_reached<TTrans, TMuxer, TInEvent, TOutEvent>(
     reach_attempts: &mut ReachAttempts,
     event: CollectionReachEvent<TInEvent, TOutEvent>
-) -> (ActionItem, SwarmEvent<TTrans, TOutEvent>)
+) -> (ActionItem, RawSwarmEvent<TTrans, TOutEvent>)
 where
     TTrans: Transport<Output = (PeerId, TMuxer)> + Clone,
     TTrans::Dial: Send + 'static,
@@ -751,13 +752,13 @@ where
 
         let (outcome, peer_id) = event.accept();
         if outcome == CollectionNodeAccept::ReplacedExisting {
-            return (action, SwarmEvent::Replaced {
+            return (action, RawSwarmEvent::Replaced {
                 peer_id,
                 endpoint,
                 closed_multiaddr,
             });
         } else {
-            return (action, SwarmEvent::Connected { peer_id, endpoint });
+            return (action, RawSwarmEvent::Connected { peer_id, endpoint });
         }
     }
 
@@ -783,13 +784,13 @@ where
 
         let (outcome, peer_id) = event.accept();
         if outcome == CollectionNodeAccept::ReplacedExisting {
-            return (Default::default(), SwarmEvent::Replaced {
+            return (Default::default(), RawSwarmEvent::Replaced {
                 peer_id,
                 endpoint,
                 closed_multiaddr,
             });
         } else {
-            return (Default::default(), SwarmEvent::Connected { peer_id, endpoint });
+            return (Default::default(), RawSwarmEvent::Connected { peer_id, endpoint });
         }
     }
 
@@ -821,7 +822,7 @@ where
             Default::default()
         };
 
-        return (action, SwarmEvent::PublicKeyMismatch {
+        return (action, RawSwarmEvent::PublicKeyMismatch {
             remain_addrs_attempt: num_remain,
             expected_peer_id,
             actual_peer_id: peer_id,
@@ -848,7 +849,7 @@ fn handle_reach_error<TTrans, TOutEvent>(
     reach_attempts: &mut ReachAttempts,
     reach_id: ReachAttemptId,
     error: IoError,
-) -> (ActionItem, SwarmEvent<TTrans, TOutEvent>)
+) -> (ActionItem, RawSwarmEvent<TTrans, TOutEvent>)
 where TTrans: Transport
 {
     // Search for the attempt in `out_reach_attempts`.
@@ -876,7 +877,7 @@ where TTrans: Transport
             Default::default()
         };
 
-        return (action, SwarmEvent::DialError {
+        return (action, RawSwarmEvent::DialError {
             remain_addrs_attempt: num_remain,
             peer_id,
             multiaddr: failed_addr,
@@ -893,13 +894,13 @@ where TTrans: Transport
         let (_, endpoint) = reach_attempts.other_reach_attempts.swap_remove(in_pos);
         match endpoint {
             ConnectedPoint::Dialer { address } => {
-                return (Default::default(), SwarmEvent::UnknownPeerDialError {
+                return (Default::default(), RawSwarmEvent::UnknownPeerDialError {
                     multiaddr: address,
                     error,
                 });
             }
             ConnectedPoint::Listener { listen_addr, send_back_addr } => {
-                return (Default::default(), SwarmEvent::IncomingConnectionError { listen_addr, send_back_addr, error });
+                return (Default::default(), RawSwarmEvent::IncomingConnectionError { listen_addr, send_back_addr, error });
             }
         }
     }
@@ -1242,7 +1243,7 @@ where
     THandler: NodeHandler<Substream = Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent> + Send + 'static,
     THandler::OutboundOpenInfo: Send + 'static, // TODO: shouldn't be necessary
 {
-    type Item = SwarmEvent<TTrans, TOutEvent>;
+    type Item = RawSwarmEvent<TTrans, TOutEvent>;
     type Error = Void; // TODO: use `!` once stable
 
     #[inline]

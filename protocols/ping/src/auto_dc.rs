@@ -21,7 +21,7 @@
 use futures::prelude::*;
 use libp2p_core::{ConnectionUpgrade, PeerId, nodes::protocols_handler::ProtocolsHandler};
 use libp2p_core::nodes::protocols_handler::{ProtocolsHandlerSelect, Either as ProtoHdlerEither};
-use libp2p_core::nodes::raw_swarm::{ConnectedPoint, SwarmEvent};
+use libp2p_core::nodes::raw_swarm::{ConnectedPoint, RawSwarmEvent};
 use libp2p_core::nodes::raw_swarm::{SwarmLayer, PollOutcome};
 use libp2p_core::Transport;
 use std::collections::VecDeque;
@@ -66,7 +66,7 @@ where TInner: SwarmLayer<TTrans, TOutEvent>,
             .select(self.inner.new_handler(connected_point))
     }
 
-    fn inject_swarm_event(&mut self, event: SwarmEvent<TTrans, <Self::Handler as ProtocolsHandler>::OutEvent>) {
+    fn inject_swarm_event(&mut self, event: RawSwarmEvent<TTrans, <Self::Handler as ProtocolsHandler>::OutEvent>) {
         let inner_event = event
             .filter_map_out_event(|peer_id, event| {
                 match event {

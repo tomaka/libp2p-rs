@@ -68,12 +68,12 @@ fn main() {
         .expect("unsupported multiaddr");
 
     enum MyEvent<TTrans: libp2p::Transport, TVoid> {
-        Swarm(libp2p::core::nodes::raw_swarm::SwarmEvent<TTrans, TVoid>),
+        Swarm(libp2p::core::nodes::raw_swarm::RawSwarmEvent<TTrans, TVoid>),
         Ping(libp2p::ping::AutoDcLayerEvent),
     }
 
-    impl<TTrans: libp2p::Transport, TVoid> From<libp2p::core::nodes::raw_swarm::SwarmEvent<TTrans, TVoid>> for MyEvent<TTrans, TVoid> {
-        fn from(event: libp2p::core::nodes::raw_swarm::SwarmEvent<TTrans, TVoid>) -> Self {
+    impl<TTrans: libp2p::Transport, TVoid> From<libp2p::core::nodes::raw_swarm::RawSwarmEvent<TTrans, TVoid>> for MyEvent<TTrans, TVoid> {
+        fn from(event: libp2p::core::nodes::raw_swarm::RawSwarmEvent<TTrans, TVoid>) -> Self {
             MyEvent::Swarm(event)
         }
     }
