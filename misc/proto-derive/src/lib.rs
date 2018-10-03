@@ -64,19 +64,29 @@ fn build_struct(ast: &DeriveInput, data_struct: &DataStruct) -> TokenStream {
         quote!{#n}
     };
 
+    // Name of the type parameter that represents the output event.
+    let out_event_generic = {
+        let mut n = "TOutEvent".to_string();
+        while ast.generics.type_params().any(|tp| tp.ident.to_string() == n) {
+            n.push('1');
+        }
+        let n = Ident::new(&n, name.span());
+        quote!{#n}
+    };
+
     // Build the generics.
     let impl_generics = {
         let tp = ast.generics.type_params();
         let lf = ast.generics.lifetimes();
         let cst = ast.generics.const_params();
-        quote!{<#(#lf,)* #(#tp,)* #(#cst,)* #substream_generic>}
+        quote!{<#(#lf,)* #(#tp,)* #(#cst,)* #substream_generic, #out_event_generic>}
     };
 
     // Build the `where ...` clause of the trait implementation.
     let where_clause = {
         let additional = data_struct.fields.iter().map(|field| {
             let ty = &field.ty;
-            quote!{#ty: #trait_to_impl<Substream = #substream_generic>}
+            quote!{#ty: #trait_to_impl<Substream = #substream_generic, OutEvent = #out_event_generic>}
         }).collect::<Vec<_>>();
 
         if let Some(in_where_clause) = in_where_clause {
@@ -188,20 +198,6 @@ fn build_struct(ast: &DeriveInput, data_struct: &DataStruct) -> TokenStream {
         in_event.unwrap_or(quote!{()})     // TODO: `!` instead
     };
 
-    // The `OutEvent` associated type.
-    let out_event = {
-        let mut out_event = None;
-        for field in data_struct.fields.iter() {
-            let ty = &field.ty;
-            let field_out = quote!{ <#ty as #trait_to_impl>::OutEvent };
-            match out_event {
-                Some(ev) => out_event = Some(quote!{ #either_ident<#ev, #field_out> }),
-                ref mut ev @ None => *ev = Some(field_out),
-            }
-        }
-        out_event.unwrap_or(quote!{()})     // TODO: `!` instead
-    };
-
     // The `Protocol` associated type.
     let protocol_ty = {
         let mut protocol_ty = None;
@@ -294,7 +290,7 @@ fn build_struct(ast: &DeriveInput, data_struct: &DataStruct) -> TokenStream {
         #where_clause
         {
             type InEvent = #in_event;
-            type OutEvent = #out_event;
+            type OutEvent = #out_event_generic;
             type Substream = #substream_generic;
             type Protocol = #protocol_ty;
             type OutboundOpenInfo = #out_info;

@@ -71,6 +71,18 @@ pub trait ProtocolHandler {
     /// node should be closed.
     fn poll(&mut self) -> Poll<Option<NodeHandlerEvent<(Self::Protocol, Self::OutboundOpenInfo), Self::OutEvent>>, IoError>;
 
+    /// Adds a closure that turns the output event into something else.
+    #[inline]
+    fn map_out_event<TMap, TNewOut>(self, map: TMap) -> MapOutEvent<Self, TMap>
+    where Self: Sized,
+          TMap: FnMut(Self::OutEvent) -> TNewOut
+    {
+        MapOutEvent {
+            inner: self,
+            map,
+        }
+    }
+
     /// Builds an implementation of `ProtocolHandler` that combines this handler with another one.
     #[inline]
     fn select<TOther>(self, other: TOther) -> ProtocolHandlerSelect<Self, TOther>
@@ -148,6 +160,67 @@ where TSubstream: AsyncRead + AsyncWrite
         } else {
             Ok(Async::NotReady)
         }
+    }
+}
+
+/// Wrapper around a protocol handler that turns the output event into something else.
+pub struct MapOutEvent<TProtoHandler, TMap> {
+    inner: TProtoHandler,
+    map: TMap,
+}
+
+impl<TProtoHandler, TMap, TNewOut> ProtocolHandler for MapOutEvent<TProtoHandler, TMap>
+where TProtoHandler: ProtocolHandler,
+      TMap: FnMut(TProtoHandler::OutEvent) -> TNewOut
+{
+    type InEvent = TProtoHandler::InEvent;
+    type OutEvent = TNewOut;
+    type Substream = TProtoHandler::Substream;
+    type Protocol = TProtoHandler::Protocol;
+    type OutboundOpenInfo = TProtoHandler::OutboundOpenInfo;
+
+    #[inline]
+    fn listen_protocol(&self) -> Self::Protocol {
+        self.inner.listen_protocol()
+    }
+
+    #[inline]
+    fn inject_fully_negotiated(&mut self, protocol: <Self::Protocol as ConnectionUpgrade<Self::Substream>>::Output, endpoint: NodeHandlerEndpoint<Self::OutboundOpenInfo>) {
+        self.inner.inject_fully_negotiated(protocol, endpoint)
+    }
+
+    #[inline]
+    fn inject_event(&mut self, event: Self::InEvent) {
+        self.inner.inject_event(event)
+    }
+
+    #[inline]
+    fn inject_dial_upgrade_error(&mut self, info: Self::OutboundOpenInfo, error: &IoError) {
+        self.inner.inject_dial_upgrade_error(info, error)
+    }
+
+    #[inline]
+    fn inject_inbound_closed(&mut self) {
+        self.inner.inject_inbound_closed()
+    }
+
+    #[inline]
+    fn shutdown(&mut self) {
+        self.inner.shutdown()
+    }
+
+    #[inline]
+    fn poll(&mut self) -> Poll<Option<NodeHandlerEvent<(Self::Protocol, Self::OutboundOpenInfo), Self::OutEvent>>, IoError> {
+        Ok(self.inner.poll()?.map(|ev| {
+            ev.map(|ev| {
+                match ev {
+                    NodeHandlerEvent::Custom(ev) => NodeHandlerEvent::Custom((self.map)(ev)),
+                    NodeHandlerEvent::OutboundSubstreamRequest(info) => {
+                        NodeHandlerEvent::OutboundSubstreamRequest(info)
+                    },
+                }
+            })
+        }))
     }
 }
 
@@ -282,10 +355,10 @@ pub struct ProtocolHandlerSelect<TProto1, TProto2> {
     proto2: TProto2,
 }
 
-impl<TSubstream, TProto1, TProto2, TProto1Out, TProto2Out>
+impl<TSubstream, TProto1, TProto2, TProto1Out, TProto2Out, TOutEvent>
     ProtocolHandler for ProtocolHandlerSelect<TProto1, TProto2>
-where TProto1: ProtocolHandler<Substream = TSubstream>,
-      TProto2: ProtocolHandler<Substream = TSubstream>,
+where TProto1: ProtocolHandler<Substream = TSubstream, OutEvent = TOutEvent>,
+      TProto2: ProtocolHandler<Substream = TSubstream, OutEvent = TOutEvent>,
       TSubstream: AsyncRead + AsyncWrite,
       TProto1::Protocol: ConnectionUpgrade<TSubstream, Output = TProto1Out>,
       TProto2::Protocol: ConnectionUpgrade<TSubstream, Output = TProto2Out>,
@@ -295,7 +368,7 @@ where TProto1: ProtocolHandler<Substream = TSubstream>,
       <TProto2::Protocol as ConnectionUpgrade<TSubstream>>::Future: Send + 'static,
 {
     type InEvent = Either<TProto1::InEvent, TProto2::InEvent>;
-    type OutEvent = Either<TProto1::OutEvent, TProto2::OutEvent>;
+    type OutEvent = TOutEvent;
     type Substream = TSubstream;
     type Protocol = OrUpgrade<Toggleable<UpgradeMap<TProto1::Protocol, fn(TProto1Out) -> EitherOutput<TProto1Out, TProto2Out>>>, Toggleable<UpgradeMap<TProto2::Protocol, fn(TProto2Out) -> EitherOutput<TProto1Out, TProto2Out>>>>;
     type OutboundOpenInfo = Either<TProto1::OutboundOpenInfo, TProto2::OutboundOpenInfo>;
@@ -361,7 +434,7 @@ where TProto1: ProtocolHandler<Substream = TSubstream>,
     fn poll(&mut self) -> Poll<Option<NodeHandlerEvent<(Self::Protocol, Self::OutboundOpenInfo), Self::OutEvent>>, IoError> {
         match self.proto1.poll()? {
             Async::Ready(Some(NodeHandlerEvent::Custom(event))) => {
-                return Ok(Async::Ready(Some(NodeHandlerEvent::Custom(Either::First(event)))));
+                return Ok(Async::Ready(Some(NodeHandlerEvent::Custom(event))));
             },
             Async::Ready(Some(NodeHandlerEvent::OutboundSubstreamRequest((proto, rq)))) => {
                 let proto = {
@@ -379,7 +452,7 @@ where TProto1: ProtocolHandler<Substream = TSubstream>,
 
         match self.proto2.poll()? {
             Async::Ready(Some(NodeHandlerEvent::Custom(event))) => {
-                return Ok(Async::Ready(Some(NodeHandlerEvent::Custom(Either::Second(event)))));
+                return Ok(Async::Ready(Some(NodeHandlerEvent::Custom(event))));
             },
             Async::Ready(Some(NodeHandlerEvent::OutboundSubstreamRequest((proto, rq)))) => {
                 let proto = {
