@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use futures::prelude::*;
-use libp2p_core::{ConnectionUpgrade, nodes::protocol_handler::ProtocolsHandler};
+use libp2p_core::{ConnectionUpgrade, nodes::protocols_handler::ProtocolsHandler};
 use libp2p_core::nodes::handled_node::{NodeHandlerEvent, NodeHandlerEndpoint};
 use std::io;
 use std::time::{Duration, Instant};

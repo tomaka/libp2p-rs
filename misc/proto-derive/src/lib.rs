@@ -48,8 +48,8 @@ fn build(ast: &DeriveInput) -> TokenStream {
 fn build_struct(ast: &DeriveInput, data_struct: &DataStruct) -> TokenStream {
     let name = &ast.ident;
     let (_, ty_generics, in_where_clause) = ast.generics.split_for_impl();
-    let trait_to_impl = quote!{::libp2p::core::nodes::protocol_handler::ProtocolsHandler};
-    let either_ident = quote!{::libp2p::core::nodes::protocol_handler::Either};
+    let trait_to_impl = quote!{::libp2p::core::nodes::protocols_handler::ProtocolsHandler};
+    let either_ident = quote!{::libp2p::core::nodes::protocols_handler::Either};
     let either_output_ident = quote!{::libp2p::core::either::EitherOutput};
     let node_handler_event = quote!{::libp2p::core::nodes::handled_node::NodeHandlerEvent};
     let node_handler_endpoint = quote!{::libp2p::core::nodes::handled_node::NodeHandlerEndpoint};

@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use futures::prelude::*;
-use libp2p_core::{ConnectionUpgrade, Multiaddr, nodes::protocol_handler::ProtocolsHandler};
+use libp2p_core::{ConnectionUpgrade, Multiaddr, nodes::protocols_handler::ProtocolsHandler};
 use libp2p_core::nodes::handled_node::{NodeHandlerEvent, NodeHandlerEndpoint};
 use libp2p_core::upgrade::{self, toggleable::Toggleable};
 use std::io;

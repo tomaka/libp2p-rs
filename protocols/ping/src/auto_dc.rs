@@ -19,8 +19,8 @@
 // DEALINGS IN THE SOFTWARE.
 
 use futures::prelude::*;
-use libp2p_core::{ConnectionUpgrade, PeerId, nodes::protocol_handler::ProtocolsHandler};
-use libp2p_core::nodes::protocol_handler::{ProtocolsHandlerSelect, Either as ProtoHdlerEither};
+use libp2p_core::{ConnectionUpgrade, PeerId, nodes::protocols_handler::ProtocolsHandler};
+use libp2p_core::nodes::protocols_handler::{ProtocolsHandlerSelect, Either as ProtoHdlerEither};
 use libp2p_core::nodes::raw_swarm::{ConnectedPoint, SwarmEvent};
 use libp2p_core::nodes::swarm::{SwarmLayer, PollOutcome};
 use libp2p_core::Transport;
