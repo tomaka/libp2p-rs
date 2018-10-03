@@ -27,7 +27,7 @@ extern crate tokio;
 use futures::{Future, Stream};
 use std::env;
 use libp2p::core::Transport;
-use libp2p::core::{nodes::protocol_handler::ProtocolHandler, upgrade};
+use libp2p::core::{nodes::protocol_handler::ProtocolsHandler, upgrade};
 use libp2p::tcp::TcpConfig;
 
 fn main() {

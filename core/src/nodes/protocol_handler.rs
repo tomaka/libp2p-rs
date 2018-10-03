@@ -31,7 +31,7 @@ use {ConnectionUpgrade, Endpoint};
 
 /// Handler for a protocol.
 // TODO: add upgrade timeout system
-pub trait ProtocolHandler {
+pub trait ProtocolsHandler {
     /// Custom event that can be received from the outside.
     type InEvent;
     /// Custom event that can be produced by the handler and that will be returned by the swarm.
@@ -83,12 +83,12 @@ pub trait ProtocolHandler {
         }
     }
 
-    /// Builds an implementation of `ProtocolHandler` that combines this handler with another one.
+    /// Builds an implementation of `ProtocolsHandler` that combines this handler with another one.
     #[inline]
-    fn select<TOther>(self, other: TOther) -> ProtocolHandlerSelect<Self, TOther>
+    fn select<TOther>(self, other: TOther) -> ProtocolsHandlerSelect<Self, TOther>
     where Self: Sized
     {
-        ProtocolHandlerSelect {
+        ProtocolsHandlerSelect {
             proto1: self,
             proto2: other,
         }
@@ -108,23 +108,23 @@ pub trait ProtocolHandler {
     }
 }
 
-/// Implementation of `ProtocolHandler` that doesn't handle anything.
-pub struct DummyProtocolHandler<TSubstream> {
+/// Implementation of `ProtocolsHandler` that doesn't handle anything.
+pub struct DummyProtocolsHandler<TSubstream> {
     shutting_down: bool,
     marker: PhantomData<TSubstream>,
 }
 
-impl<TSubstream> Default for DummyProtocolHandler<TSubstream> {
+impl<TSubstream> Default for DummyProtocolsHandler<TSubstream> {
     #[inline]
     fn default() -> Self {
-        DummyProtocolHandler {
+        DummyProtocolsHandler {
             shutting_down: false,
             marker: PhantomData,
         }
     }
 }
 
-impl<TSubstream> ProtocolHandler for DummyProtocolHandler<TSubstream>
+impl<TSubstream> ProtocolsHandler for DummyProtocolsHandler<TSubstream>
 where TSubstream: AsyncRead + AsyncWrite
 {
     type InEvent = Void;
@@ -169,8 +169,8 @@ pub struct MapOutEvent<TProtoHandler, TMap> {
     map: TMap,
 }
 
-impl<TProtoHandler, TMap, TNewOut> ProtocolHandler for MapOutEvent<TProtoHandler, TMap>
-where TProtoHandler: ProtocolHandler,
+impl<TProtoHandler, TMap, TNewOut> ProtocolsHandler for MapOutEvent<TProtoHandler, TMap>
+where TProtoHandler: ProtocolsHandler,
       TMap: FnMut(TProtoHandler::OutEvent) -> TNewOut
 {
     type InEvent = TProtoHandler::InEvent;
@@ -224,9 +224,9 @@ where TProtoHandler: ProtocolHandler,
     }
 }
 
-/// Wraps around an implementation of `ProtocolHandler`, and implements `NodeHandler`.
+/// Wraps around an implementation of `ProtocolsHandler`, and implements `NodeHandler`.
 pub struct NodeHandlerWrapper<TProtoHandler>
-where TProtoHandler: ProtocolHandler
+where TProtoHandler: ProtocolsHandler
 {
     handler: TProtoHandler,
     negotiating_in: Vec<UpgradeApplyFuture<TProtoHandler::Substream, TProtoHandler::Protocol>>,
@@ -236,7 +236,7 @@ where TProtoHandler: ProtocolHandler
 }
 
 impl<TProtoHandler> NodeHandler for NodeHandlerWrapper<TProtoHandler>
-where TProtoHandler: ProtocolHandler,
+where TProtoHandler: ProtocolsHandler,
       <TProtoHandler::Protocol as ConnectionUpgrade<TProtoHandler::Substream>>::NamesIter: Clone,
 {
     type InEvent = TProtoHandler::InEvent;
@@ -350,15 +350,15 @@ pub enum Either<A, B> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ProtocolHandlerSelect<TProto1, TProto2> {
+pub struct ProtocolsHandlerSelect<TProto1, TProto2> {
     proto1: TProto1,
     proto2: TProto2,
 }
 
 impl<TSubstream, TProto1, TProto2, TProto1Out, TProto2Out, TOutEvent>
-    ProtocolHandler for ProtocolHandlerSelect<TProto1, TProto2>
-where TProto1: ProtocolHandler<Substream = TSubstream, OutEvent = TOutEvent>,
-      TProto2: ProtocolHandler<Substream = TSubstream, OutEvent = TOutEvent>,
+    ProtocolsHandler for ProtocolsHandlerSelect<TProto1, TProto2>
+where TProto1: ProtocolsHandler<Substream = TSubstream, OutEvent = TOutEvent>,
+      TProto2: ProtocolsHandler<Substream = TSubstream, OutEvent = TOutEvent>,
       TSubstream: AsyncRead + AsyncWrite,
       TProto1::Protocol: ConnectionUpgrade<TSubstream, Output = TProto1Out>,
       TProto2::Protocol: ConnectionUpgrade<TSubstream, Output = TProto2Out>,

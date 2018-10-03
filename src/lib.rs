@@ -161,7 +161,7 @@ pub extern crate libp2p_yamux as yamux;
 
 pub mod simple;
 
-pub use libp2p_proto_derive::ProtocolHandler;
+pub use libp2p_proto_derive::ProtocolsHandler;
 pub use self::core::{Transport, ConnectionUpgrade, PeerId};
 pub use self::multiaddr::Multiaddr;
 pub use self::simple::SimpleProtocol;

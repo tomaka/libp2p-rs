@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use futures::prelude::*;
-use libp2p_core::{ConnectionUpgrade, PeerId, nodes::protocol_handler::ProtocolHandler};
+use libp2p_core::{ConnectionUpgrade, PeerId, nodes::protocol_handler::ProtocolsHandler};
 use libp2p_core::nodes::handled_node::{NodeHandlerEvent, NodeHandlerEndpoint};
 use multihash::Multihash;
 use protocol::{KadMsg, KadPeer, KademliaProtocolConfig, KadStreamSink};
@@ -180,7 +180,7 @@ impl Into<KadMsg> for InEvent {
     }
 }
 
-impl<TSubstream> ProtocolHandler for KademliaHandler<TSubstream>
+impl<TSubstream> ProtocolsHandler for KademliaHandler<TSubstream>
 where TSubstream: AsyncRead + AsyncWrite + 'static,
 {
     type InEvent = InEvent;

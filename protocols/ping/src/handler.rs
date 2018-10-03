@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use futures::prelude::*;
-use libp2p_core::{ConnectionUpgrade, nodes::protocol_handler::ProtocolHandler};
+use libp2p_core::{ConnectionUpgrade, nodes::protocol_handler::ProtocolsHandler};
 use libp2p_core::nodes::handled_node::{NodeHandlerEvent, NodeHandlerEndpoint};
 use std::io;
 use std::time::{Duration, Instant};
@@ -83,7 +83,7 @@ impl<TSubstream> PeriodicPingHandler<TSubstream> {
     }
 }
 
-impl<TSubstream> ProtocolHandler for PeriodicPingHandler<TSubstream>
+impl<TSubstream> ProtocolsHandler for PeriodicPingHandler<TSubstream>
 where TSubstream: AsyncRead + AsyncWrite,
 {
     type InEvent = Void;

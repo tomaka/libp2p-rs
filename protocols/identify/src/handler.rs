@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use futures::prelude::*;
-use libp2p_core::{ConnectionUpgrade, Multiaddr, nodes::protocol_handler::ProtocolHandler};
+use libp2p_core::{ConnectionUpgrade, Multiaddr, nodes::protocol_handler::ProtocolsHandler};
 use libp2p_core::nodes::handled_node::{NodeHandlerEvent, NodeHandlerEndpoint};
 use libp2p_core::upgrade::{self, toggleable::Toggleable};
 use std::io;
@@ -77,7 +77,7 @@ impl<TSubstream> PeriodicIdentification<TSubstream> {
     }
 }
 
-impl<TSubstream> ProtocolHandler for PeriodicIdentification<TSubstream>
+impl<TSubstream> ProtocolsHandler for PeriodicIdentification<TSubstream>
 where TSubstream: AsyncRead + AsyncWrite + Send + Sync + 'static,   // TODO: remove useless bounds
 {
     type InEvent = Void;

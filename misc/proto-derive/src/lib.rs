@@ -29,7 +29,7 @@ extern crate quote;
 use proc_macro::TokenStream;
 use syn::{DeriveInput, Data, DataStruct, Ident};
 
-#[proc_macro_derive(ProtocolHandler)]
+#[proc_macro_derive(ProtocolsHandler)]
 pub fn hello_macro_derive(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
     build(&ast)
@@ -48,7 +48,7 @@ fn build(ast: &DeriveInput) -> TokenStream {
 fn build_struct(ast: &DeriveInput, data_struct: &DataStruct) -> TokenStream {
     let name = &ast.ident;
     let (_, ty_generics, in_where_clause) = ast.generics.split_for_impl();
-    let trait_to_impl = quote!{::libp2p::core::nodes::protocol_handler::ProtocolHandler};
+    let trait_to_impl = quote!{::libp2p::core::nodes::protocol_handler::ProtocolsHandler};
     let either_ident = quote!{::libp2p::core::nodes::protocol_handler::Either};
     let either_output_ident = quote!{::libp2p::core::either::EitherOutput};
     let node_handler_event = quote!{::libp2p::core::nodes::handled_node::NodeHandlerEvent};

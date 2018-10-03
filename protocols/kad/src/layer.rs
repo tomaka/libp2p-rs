@@ -20,8 +20,8 @@
 
 use futures::prelude::*;
 use handler::{KademliaHandler, OutEvent};
-use libp2p_core::{ConnectionUpgrade, PeerId, nodes::protocol_handler::ProtocolHandler};
-use libp2p_core::nodes::protocol_handler::{ProtocolHandlerSelect, Either as ProtoHdlerEither};
+use libp2p_core::{ConnectionUpgrade, PeerId, nodes::protocol_handler::ProtocolsHandler};
+use libp2p_core::nodes::protocol_handler::{ProtocolsHandlerSelect, Either as ProtoHdlerEither};
 use libp2p_core::nodes::raw_swarm::{ConnectedPoint, SwarmEvent};
 use libp2p_core::nodes::swarm::{SwarmLayer, PollOutcome};
 use libp2p_core::Transport;
@@ -51,21 +51,21 @@ impl<TInner, TTrans, TSubstream, TOutEvent> SwarmLayer<TTrans, TOutEvent> for Ka
 where TInner: SwarmLayer<TTrans, TOutEvent>,
       TOutEvent: From<KademliaLayerEvent>,
       // TODO: too many bounds
-      TInner::Handler: ProtocolHandler<Substream = TSubstream>,
-      <TInner::Handler as ProtocolHandler>::Protocol: ConnectionUpgrade<TSubstream>,
-      <<TInner::Handler as ProtocolHandler>::Protocol as ConnectionUpgrade<TSubstream>>::Future: Send + 'static,
-      <<TInner::Handler as ProtocolHandler>::Protocol as ConnectionUpgrade<TSubstream>>::Output: Send + 'static,
+      TInner::Handler: ProtocolsHandler<Substream = TSubstream>,
+      <TInner::Handler as ProtocolsHandler>::Protocol: ConnectionUpgrade<TSubstream>,
+      <<TInner::Handler as ProtocolsHandler>::Protocol as ConnectionUpgrade<TSubstream>>::Future: Send + 'static,
+      <<TInner::Handler as ProtocolsHandler>::Protocol as ConnectionUpgrade<TSubstream>>::Output: Send + 'static,
       TTrans: Transport,
       TSubstream: AsyncRead + AsyncWrite + Send + 'static,
 {
-    type Handler = ProtocolHandlerSelect<KademliaHandler<TSubstream>, TInner::Handler>;
+    type Handler = ProtocolsHandlerSelect<KademliaHandler<TSubstream>, TInner::Handler>;
     type NodeHandlerOutEvent = ProtoHdlerEither<OutEvent, TInner::NodeHandlerOutEvent>;
 
     fn new_handler(&self, connected_point: ConnectedPoint) -> Self::Handler {
         KademliaHandler::new().select(self.inner.new_handler(connected_point))
     }
 
-    fn inject_swarm_event(&mut self, event: SwarmEvent<TTrans, <Self::Handler as ProtocolHandler>::OutEvent>) {
+    fn inject_swarm_event(&mut self, event: SwarmEvent<TTrans, <Self::Handler as ProtocolsHandler>::OutEvent>) {
         let inner_event = event
             .filter_map_out_event(|peer_id, event| {
                 match event {
@@ -116,7 +116,7 @@ where TInner: SwarmLayer<TTrans, TOutEvent>,
         }
     }
 
-    fn poll(&mut self) -> Async<PollOutcome<<Self::Handler as ProtocolHandler>::InEvent, TOutEvent>> {
+    fn poll(&mut self) -> Async<PollOutcome<<Self::Handler as ProtocolsHandler>::InEvent, TOutEvent>> {
         if let Some(event) = self.pending_events.pop_front() {
             return Async::Ready(PollOutcome::GenerateEvent(event.into()));
         }
