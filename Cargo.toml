@@ -19,6 +19,7 @@ libp2p-kad = { path = "./protocols/kad" }
 libp2p-floodsub = { path = "./protocols/floodsub" }
 libp2p-peerstore = { path = "./stores/peerstore" }
 libp2p-ping = { path = "./protocols/ping" }
+libp2p-proto-derive = { path = "./misc/proto-derive" }
 libp2p-ratelimit = { path = "./transports/ratelimit" }
 libp2p-relay = { path = "./transports/relay" }
 libp2p-core = { path = "./core" }
@@ -76,6 +77,7 @@ members = [
     "misc/multiaddr",
     "misc/multihash",
     "misc/multistream-select",
+    "misc/proto-derive",
     "misc/rw-stream-sink",
     "transports/dns",
     "protocols/floodsub",

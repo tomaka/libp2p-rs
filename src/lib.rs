@@ -138,6 +138,8 @@ pub extern crate multiaddr;
 pub extern crate tokio_io;
 pub extern crate tokio_codec;
 
+extern crate libp2p_proto_derive;
+
 pub extern crate libp2p_core as core;
 #[cfg(not(target_os = "emscripten"))]
 pub extern crate libp2p_dns as dns;
@@ -159,6 +161,7 @@ pub extern crate libp2p_yamux as yamux;
 
 pub mod simple;
 
+pub use libp2p_proto_derive::ProtocolHandler;
 pub use self::core::{Transport, ConnectionUpgrade, PeerId};
 pub use self::multiaddr::Multiaddr;
 pub use self::simple::SimpleProtocol;
