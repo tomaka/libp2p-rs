@@ -74,7 +74,7 @@ where TBehaviour: NetworkBehavior,
     /// Builds a new `Swarm`.
     #[inline]
     pub fn new(transport: <TBehaviour as NetworkBehavior>::Transport, behaviour: TBehaviour) -> Self {
-        let raw_swarm = RawSwarm::with_handler_builder(transport, LocalBuilder(PhantomData));
+        let raw_swarm = RawSwarm::new(transport, LocalBuilder(PhantomData));
         Swarm {
             raw_swarm,
             behaviour,

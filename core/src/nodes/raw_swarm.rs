@@ -382,26 +382,7 @@ where
 {
     /// Creates a new node events stream.
     #[inline]
-    pub fn new(transport: TTrans) -> RawSwarm<TTrans, TInEvent, TOutEvent, fn() -> THandler>
-    where THandler: Default,
-    {
-        // TODO: with_capacity?
-        RawSwarm {
-            listeners: ListenersStream::new(transport),
-            active_nodes: CollectionStream::new(),
-            reach_attempts: ReachAttempts {
-                out_reach_attempts: Default::default(),
-                other_reach_attempts: Vec::new(),
-                connected_multiaddresses: Default::default(),
-            },
-            handler_build: Default::default,
-        }
-    }
-
-    /// Same as `new`, but lets you specify a way to build a node handler.
-    // TODO: rename to new
-    #[inline]
-    pub fn with_handler_builder(transport: TTrans, handler_build: THandlerBuild) -> Self {
+    pub fn new(transport: TTrans, handler_build: THandlerBuild) -> Self {
         // TODO: with_capacity?
         RawSwarm {
             listeners: ListenersStream::new(transport),
