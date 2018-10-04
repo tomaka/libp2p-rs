@@ -20,109 +20,74 @@
 
 use futures::prelude::*;
 use handler::{KademliaHandler, OutEvent};
-use libp2p_core::{ConnectionUpgrade, PeerId, nodes::protocols_handler::ProtocolsHandler};
-use libp2p_core::nodes::protocols_handler::{ProtocolsHandlerSelect, Either as ProtoHdlerEither};
-use libp2p_core::nodes::raw_swarm::{ConnectedPoint, RawSwarmEvent};
-use libp2p_core::nodes::raw_swarm::{SwarmLayer, PollOutcome};
-use libp2p_core::Transport;
+use libp2p_core::{PeerId, nodes::protocols_handler::ProtocolsHandler};
+use libp2p_core::nodes::node::Substream;
+use libp2p_core::nodes::raw_swarm::RawSwarmEvent;
+use libp2p_core::nodes::swarm::{NetworkBehavior, NetworkBehaviorAction};
+use libp2p_core::{StreamMuxer, Transport};
 use multihash::Multihash;
 use protocol::KadPeer;
 use std::collections::VecDeque;
-use tokio_io::{AsyncRead, AsyncWrite};
+use std::io;
+use std::marker::PhantomData;
 
-/// Layer that automatically handles Kademlia.
-pub struct KademliaLayer<TInner> {
-    inner: TInner,
-    pending_events: VecDeque<KademliaLayerEvent>,
+/// Layer that propagates Kademlia messages to the outside.
+pub struct KademliaBehaviour<TTrans> {
+    /// Events waiting to be propagated out through polling.
+    pending_events: VecDeque<KademliaBehaviourEvent>,
+    /// Marker to pin the generics.
+    marker: PhantomData<TTrans>,
 }
 
-impl<TInner> KademliaLayer<TInner> {
+impl<TInner> KademliaBehaviour<TInner> {
     /// Creates a layer that handles Kademlia in the network.
     #[inline]
-    pub fn new(inner: TInner) -> Self {
-        KademliaLayer {
-            inner,
-            pending_events: VecDeque::new(),
+    pub fn new() -> Self {
+        KademliaBehaviour {
+            pending_events: VecDeque::with_capacity(1),
+            marker: PhantomData,
         }
     }
 }
 
-impl<TInner, TTrans, TSubstream, TOutEvent> SwarmLayer<TTrans, TOutEvent> for KademliaLayer<TInner>
-where TInner: SwarmLayer<TTrans, TOutEvent>,
-      TOutEvent: From<KademliaLayerEvent>,
-      // TODO: too many bounds
-      TInner::Handler: ProtocolsHandler<Substream = TSubstream>,
-      <TInner::Handler as ProtocolsHandler>::Protocol: ConnectionUpgrade<TSubstream>,
-      <<TInner::Handler as ProtocolsHandler>::Protocol as ConnectionUpgrade<TSubstream>>::Future: Send + 'static,
-      <<TInner::Handler as ProtocolsHandler>::Protocol as ConnectionUpgrade<TSubstream>>::Output: Send + 'static,
-      TTrans: Transport,
-      TSubstream: AsyncRead + AsyncWrite + Send + 'static,
+impl<TTrans, TMuxer> NetworkBehavior for KademliaBehaviour<TTrans>
+where TTrans: Transport<Output = (PeerId, TMuxer)> + Clone,
+      TMuxer: StreamMuxer + 'static,
 {
-    type Handler = ProtocolsHandlerSelect<KademliaHandler<TSubstream>, TInner::Handler>;
-    type NodeHandlerOutEvent = ProtoHdlerEither<OutEvent, TInner::NodeHandlerOutEvent>;
+    type ProtocolsHandler = KademliaHandler<Substream<TMuxer>>;
+    type Transport = TTrans;
+    type OutEvent = KademliaBehaviourEvent;
 
-    fn new_handler(&self, connected_point: ConnectedPoint) -> Self::Handler {
-        KademliaHandler::new().select(self.inner.new_handler(connected_point))
-    }
+    fn inject_event(&mut self, event: &RawSwarmEvent<Self::Transport, <Self::ProtocolsHandler as ProtocolsHandler>::OutEvent>) {
+        match event {
+            RawSwarmEvent::NodeEvent { peer_id, event: OutEvent::FindNodeReq { key } } => {
+                let ev = KademliaBehaviourEvent::FindNodeRequest {
+                    peer_id: peer_id.clone(),
+                    key: key.clone(),
+                    request_identifier: KademliaRequestId {},
+                };
 
-    fn inject_swarm_event(&mut self, event: RawSwarmEvent<TTrans, <Self::Handler as ProtocolsHandler>::OutEvent>) {
-        let inner_event = event
-            .filter_map_out_event(|peer_id, event| {
-                match event {
-                    ProtoHdlerEither::First(OutEvent::FindNodeReq { key }) => {
-                        let ev = KademliaLayerEvent::FindNodeRequest {
-                            peer_id: peer_id.clone(),
-                            key,
-                            request_identifier: KademliaRequestId {},
-                        };
+                self.pending_events.push_back(ev);
+            },
+            RawSwarmEvent::NodeEvent { peer_id, event: OutEvent::AddProvider { key, provider_peer } } => {
+                let ev = KademliaBehaviourEvent::AddProvider {
+                    peer_id: peer_id.clone(),
+                    key: key.clone(),
+                    provider_peer: provider_peer.clone(),
+                };
 
-                        self.pending_events.push_back(ev);
-                        None
-                    },
-                    ProtoHdlerEither::First(OutEvent::AddProvider { key, provider_peer }) => {
-                        let ev = KademliaLayerEvent::AddProvider {
-                            peer_id: peer_id.clone(),
-                            key,
-                            provider_peer,
-                        };
-
-                        self.pending_events.push_back(ev);
-                        None
-                    },
-                    ProtoHdlerEither::First(OutEvent::FindNodeRes { .. }) => {
-                        None
-                    },
-                    ProtoHdlerEither::First(OutEvent::GetProvidersReq { .. }) => {
-                        None
-                    },
-                    ProtoHdlerEither::First(OutEvent::GetProvidersRes { .. }) => {
-                        None
-                    },
-                    ProtoHdlerEither::First(OutEvent::Open) => {
-                        None
-                    },
-                    ProtoHdlerEither::First(OutEvent::IgnoredIncoming) => {
-                        None
-                    },
-                    ProtoHdlerEither::First(OutEvent::Closed(_)) => {
-                        None
-                    },
-                    ProtoHdlerEither::Second(ev) => Some(ev),
-                }
-            });
-
-        if let Some(inner_event) = inner_event {
-            self.inner.inject_swarm_event(inner_event);
+                self.pending_events.push_back(ev);
+            },
+            _ => ()
         }
     }
 
-    fn poll(&mut self) -> Async<PollOutcome<<Self::Handler as ProtocolsHandler>::InEvent, TOutEvent>> {
+    fn poll(&mut self) -> Poll<Option<NetworkBehaviorAction<Self::OutEvent>>, io::Error> {
         if let Some(event) = self.pending_events.pop_front() {
-            return Async::Ready(PollOutcome::GenerateEvent(event.into()));
+            return Ok(Async::Ready(Some(NetworkBehaviorAction::GenerateEvent(event))));
         }
 
-        self.inner.poll()
-            .map(|ev| ev.map_in_event(|_, ev| ProtoHdlerEither::Second(ev)))
+        Ok(Async::NotReady)
     }
 }
 
@@ -133,9 +98,9 @@ pub struct KademliaRequestId {
 
 }
 
-/// Event generated by the `KademliaLayer`.
+/// Event generated by the `KademliaBehaviour`.
 #[derive(Debug)]
-pub enum KademliaLayerEvent {
+pub enum KademliaBehaviourEvent {
     /// A node performs a FIND_NODE request towards us, and we should answer it.
     FindNodeRequest {
         /// The node that made the request.
