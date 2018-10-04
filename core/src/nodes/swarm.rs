@@ -137,6 +137,11 @@ where TBehaviour: NetworkBehavior,
                     //       is ignored if not supported in the docs of DialAddress
                     let _ = self.raw_swarm.dial(addr);
                 },
+                Async::Ready(Some(NetworkBehaviorAction::SendEventIfExists(peer_id, event))) => {
+                    if let Some(mut peer) = self.raw_swarm.peer(peer_id).as_connected() {
+                        peer.send_event(event);
+                    }
+                },
                 Async::Ready(None) => return Ok(Async::Ready(None)),
                 Async::NotReady => {
                     if raw_swarm_not_ready {
@@ -195,16 +200,18 @@ pub trait NetworkBehavior {
     /// Polls for things that swarm should do.
     ///
     /// This API mimics the API of the `Stream` trait.
-    fn poll(&mut self) -> Poll<Option<NetworkBehaviorAction<Self::OutEvent>>, io::Error>;
+    fn poll(&mut self) -> Poll<Option<NetworkBehaviorAction<<Self::ProtocolsHandler as ProtocolsHandler>::InEvent, Self::OutEvent>>, io::Error>;
 }
 
 /// Action to perform.
 #[derive(Debug, Clone)]
-pub enum NetworkBehaviorAction<TOutEvent> {
+pub enum NetworkBehaviorAction<TInEvent, TOutEvent> {
     /// Generate an outside event.
     GenerateEvent(TOutEvent),
     /// Disconnect the given peer if we are connected to it.
     DisconnectIfExists(PeerId),
     /// Instructs the swarm to dial the given multiaddress.
     DialAddress(Multiaddr),
+    /// Sends an event to a node if we're connected to it.
+    SendEventIfExists(PeerId, TInEvent),
 }

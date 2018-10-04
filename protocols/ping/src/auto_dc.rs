@@ -75,7 +75,7 @@ where TTrans: Transport<Output = (PeerId, TMuxer)> + Clone,
         }
     }
 
-    fn poll(&mut self) -> Poll<Option<NetworkBehaviorAction<Self::OutEvent>>, io::Error> {
+    fn poll(&mut self) -> Poll<Option<NetworkBehaviorAction<<Self::ProtocolsHandler as ProtocolsHandler>::InEvent, Self::OutEvent>>, io::Error> {
         if let Some(unresponsive) = self.unresponsive.pop_front() {
             return Ok(Async::Ready(Some(NetworkBehaviorAction::DisconnectIfExists(unresponsive))));
         }
