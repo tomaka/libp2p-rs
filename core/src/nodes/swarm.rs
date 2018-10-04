@@ -71,6 +71,16 @@ where TBehaviour: NetworkBehavior,
       <<TBehaviour::ProtocolsHandler as ProtocolsHandler>::Protocol as ConnectionUpgrade<Substream<TMuxer>>>::UpgradeIdentifier: Send + 'static,
       <NodeHandlerWrapper<TBehaviour::ProtocolsHandler> as NodeHandler>::OutboundOpenInfo: Send + 'static, // TODO: shouldn't be necessary
 {
+    /// Builds a new `Swarm`.
+    #[inline]
+    pub fn new(transport: <TBehaviour as NetworkBehavior>::Transport, behaviour: TBehaviour) -> Self {
+        let raw_swarm = RawSwarm::with_handler_builder(transport, LocalBuilder(PhantomData));
+        Swarm {
+            raw_swarm,
+            behaviour,
+        }
+    }
+
     /// Returns the transport passed when building this object.
     #[inline]
     pub fn transport(&self) -> &TBehaviour::Transport {
@@ -92,6 +102,9 @@ where TBehaviour: NetworkBehavior,
     /// Returns the network behaviour. Allows giving instructions.
     ///
     /// You should call `poll()` on the `Swarm` after modifying the behaviour.
+    // TODO: we could add a method on `NetworkBehaviour` that gets fed a `&mut RawSwarm` and
+    //       returns an object, and return this object which the user then interacts with ; this
+    //       way the behaviour implementation could directly operate on the raw swarm
     #[inline]
     pub fn behaviour_mut(&mut self) -> &mut TBehaviour {
         &mut self.behaviour
@@ -101,20 +114,67 @@ where TBehaviour: NetworkBehavior,
     /// `NetworkBehaviour`.
     pub fn poll(&mut self) -> Poll<Option<TBehaviour::OutEvent>, io::Error> {
         loop {
+            let mut raw_swarm_not_ready = false;
+
             match self.raw_swarm.poll() {
-                Async::Ready(Some(event)) => {
-                    self.behaviour.inject_event(&event, &mut self.raw_swarm)
-                },
+                Async::Ready(Some(event)) => self.behaviour.inject_event(&event),
                 Async::Ready(None) => unreachable!(),       // TODO:
-                Async::NotReady => break,
+                Async::NotReady => raw_swarm_not_ready = true,
+            };
+
+            match self.behaviour.poll()? {
+                Async::Ready(Some(NetworkBehaviorAction::GenerateEvent(event))) => {
+                    return Ok(Async::Ready(Some(event)));
+                },
+                Async::Ready(Some(NetworkBehaviorAction::DisconnectIfExists(peer_id))) => {
+                    if let Some(peer) = self.raw_swarm.peer(peer_id).as_connected() {
+                        peer.close();
+                    }
+                },
+                Async::Ready(Some(NetworkBehaviorAction::DialAddress(addr))) => {
+                    // TODO: if the address is not supported, this should produce an error in the
+                    //       stream of events ; alternatively, we could mention that the address
+                    //       is ignored if not supported in the docs of DialAddress
+                    let _ = self.raw_swarm.dial(addr);
+                },
+                Async::Ready(None) => return Ok(Async::Ready(None)),
+                Async::NotReady => {
+                    if raw_swarm_not_ready {
+                        return Ok(Async::NotReady);
+                    }
+                }
             }
         }
-
-        self.behaviour.poll(&mut self.raw_swarm)
     }
 }
 
-// TODO: implement the futures::Swarm trait
+impl<TBehaviour, TMuxer> Stream for Swarm<TBehaviour>
+where TBehaviour: NetworkBehavior,
+      TMuxer: StreamMuxer + Send + Sync + 'static,
+      <TMuxer as StreamMuxer>::OutboundSubstream: Send + 'static,
+      <TMuxer as StreamMuxer>::Substream: Send + 'static,
+      TBehaviour::Transport: Transport<Output = (PeerId, TMuxer)> + Clone,
+      <TBehaviour::Transport as Transport>::Dial: Send + 'static,
+      <TBehaviour::Transport as Transport>::Listener: Send + 'static,
+      <TBehaviour::Transport as Transport>::ListenerUpgrade: Send + 'static,
+      TBehaviour::ProtocolsHandler: ProtocolsHandler<Substream = Substream<TMuxer>> + Send + 'static + Default,        // TODO: Default is a hack because of the builder
+      <TBehaviour::ProtocolsHandler as ProtocolsHandler>::InEvent: Send + 'static,
+      <TBehaviour::ProtocolsHandler as ProtocolsHandler>::OutEvent: Send + 'static,
+      <TBehaviour::ProtocolsHandler as ProtocolsHandler>::Protocol: ConnectionUpgrade<Substream<TMuxer>> + Send + 'static,
+      <<TBehaviour::ProtocolsHandler as ProtocolsHandler>::Protocol as ConnectionUpgrade<Substream<TMuxer>>>::Future: Send + 'static,
+      <<TBehaviour::ProtocolsHandler as ProtocolsHandler>::Protocol as ConnectionUpgrade<Substream<TMuxer>>>::NamesIter: Clone + Send + 'static,
+      <<TBehaviour::ProtocolsHandler as ProtocolsHandler>::Protocol as ConnectionUpgrade<Substream<TMuxer>>>::UpgradeIdentifier: Send + 'static,
+      <NodeHandlerWrapper<TBehaviour::ProtocolsHandler> as NodeHandler>::OutboundOpenInfo: Send + 'static, // TODO: shouldn't be necessary
+{
+    type Item = TBehaviour::OutEvent;
+    type Error = io::Error;
+
+    #[inline]
+    fn poll(&mut self) -> Poll<Option<TBehaviour::OutEvent>, io::Error> {
+        // TODO: remove the code in the inherent `poll()` and directly move it here?
+        self.poll()
+    }
+}
 
 /// How the network behaves. Allows customizing the swarm.
 pub trait NetworkBehavior {
@@ -126,29 +186,25 @@ pub trait NetworkBehavior {
     /// Event generated by the network.
     type OutEvent;
 
-    /// Indicates the behaviour that an event happened on the raw swarm.
-    ///
-    /// The implementation can modify its internal state, and/or perform actions on the underlying
-    /// swarm.
+    /// Indicates to the behaviour that an event happened on the raw swarm.
     fn inject_event(
         &mut self,
         ev: &RawSwarmEvent<Self::Transport, <Self::ProtocolsHandler as ProtocolsHandler>::OutEvent>,
-        raw_swarm: &mut RawSwarm<
-            Self::Transport,
-            <Self::ProtocolsHandler as ProtocolsHandler>::InEvent,
-            <Self::ProtocolsHandler as ProtocolsHandler>::OutEvent,
-            LocalBuilder<Self::ProtocolsHandler>
-        >,
     );
 
-    /// Polls for final events.
-    fn poll(
-        &mut self,
-        raw_swarm: &mut RawSwarm<
-            Self::Transport,
-            <Self::ProtocolsHandler as ProtocolsHandler>::InEvent,
-            <Self::ProtocolsHandler as ProtocolsHandler>::OutEvent,
-            LocalBuilder<Self::ProtocolsHandler>
-        >
-    ) -> Poll<Option<Self::OutEvent>, io::Error>;
+    /// Polls for things that swarm should do.
+    ///
+    /// This API mimics the API of the `Stream` trait.
+    fn poll(&mut self) -> Poll<Option<NetworkBehaviorAction<Self::OutEvent>>, io::Error>;
+}
+
+/// Action to perform.
+#[derive(Debug, Clone)]
+pub enum NetworkBehaviorAction<TOutEvent> {
+    /// Generate an outside event.
+    GenerateEvent(TOutEvent),
+    /// Disconnect the given peer if we are connected to it.
+    DisconnectIfExists(PeerId),
+    /// Instructs the swarm to dial the given multiaddress.
+    DialAddress(Multiaddr),
 }

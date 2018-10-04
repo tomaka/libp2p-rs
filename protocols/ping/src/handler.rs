@@ -71,6 +71,7 @@ pub enum OutEvent {
 }
 
 impl<TSubstream> PeriodicPingHandler<TSubstream> {
+    /// Builds a new `PeriodicPingHandler`.
     pub fn new() -> PeriodicPingHandler<TSubstream> {
         PeriodicPingHandler {
             ping_config: Default::default(),
@@ -80,6 +81,13 @@ impl<TSubstream> PeriodicPingHandler<TSubstream> {
             next_ping: Delay::new(Instant::now() + DELAY_TO_FIRST_PING),
             upgrading: false,
         }
+    }
+}
+
+impl<TSubstream> Default for PeriodicPingHandler<TSubstream> {
+    #[inline]
+    fn default() -> Self {
+        PeriodicPingHandler::new()
     }
 }
 

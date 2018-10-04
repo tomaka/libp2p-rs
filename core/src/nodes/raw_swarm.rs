@@ -399,6 +399,7 @@ where
     }
 
     /// Same as `new`, but lets you specify a way to build a node handler.
+    // TODO: rename to new
     #[inline]
     pub fn with_handler_builder(transport: TTrans, handler_build: THandlerBuild) -> Self {
         // TODO: with_capacity?

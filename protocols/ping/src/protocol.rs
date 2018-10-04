@@ -348,7 +348,7 @@ mod tests {
     use self::tokio_tcp::TcpStream;
     use super::{Ping, PingOutput};
     use futures::{Future, Stream};
-    use libp2p_core::{ConnectionUpgrade, ConnectedPoint};
+    use libp2p_core::{ConnectionUpgrade, Endpoint};
 
     // TODO: rewrite tests with the MemoryTransport
 
