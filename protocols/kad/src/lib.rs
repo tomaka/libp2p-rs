@@ -87,6 +87,6 @@ mod handler;
 //mod high_level;
 //mod kad_server;
 mod kbucket;
-mod layer;
 mod protobuf_structs;
 mod protocol;
+mod raw_layer;

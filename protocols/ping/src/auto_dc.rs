@@ -21,9 +21,7 @@
 use futures::prelude::*;
 use libp2p_core::{PeerId, Transport, nodes::protocols_handler::ProtocolsHandler};
 use libp2p_core::muxing::StreamMuxer;
-use libp2p_core::nodes::node::Substream;
-use libp2p_core::nodes::raw_swarm::RawSwarmEvent;
-use libp2p_core::nodes::swarm::{NetworkBehavior, NetworkBehaviorAction};
+use libp2p_core::nodes::{Substream, RawSwarmEvent, NetworkBehavior, NetworkBehaviorAction};
 use std::collections::VecDeque;
 use std::io;
 use std::marker::PhantomData;

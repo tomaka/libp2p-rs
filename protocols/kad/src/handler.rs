@@ -19,8 +19,8 @@
 // DEALINGS IN THE SOFTWARE.
 
 use futures::prelude::*;
-use libp2p_core::{ConnectionUpgrade, PeerId, nodes::protocols_handler::ProtocolsHandler};
-use libp2p_core::nodes::handled_node::{NodeHandlerEvent, NodeHandlerEndpoint};
+use libp2p_core::{ConnectionUpgrade, PeerId};
+use libp2p_core::nodes::{ProtocolsHandler, NodeHandlerEvent, NodeHandlerEndpoint};
 use multihash::Multihash;
 use protocol::{KadMsg, KadPeer, KademliaProtocolConfig, KadStreamSink};
 use std::{collections::VecDeque, io};
