@@ -31,6 +31,9 @@ use {ConnectionUpgrade, Endpoint};
 
 /// Handler for a protocol.
 // TODO: add upgrade timeout system
+// TODO: add a "blocks connection closing" system, so that we can gracefully close a connection
+//       when it's no longer needed, and so that for example the periodic pinging system does not
+//       keep the connection alive forever
 pub trait ProtocolsHandler {
     /// Custom event that can be received from the outside.
     type InEvent;
@@ -446,6 +449,7 @@ where TProto1: ProtocolsHandler<Substream = TSubstream, OutEvent = TOutEvent>,
 
                 return Ok(Async::Ready(Some(NodeHandlerEvent::OutboundSubstreamRequest((proto, Either::First(rq))))));
             },
+            // TODO: should wait for the other handler to close as well?
             Async::Ready(None) => return Ok(Async::Ready(None)),
             Async::NotReady => ()
         };
@@ -464,6 +468,7 @@ where TProto1: ProtocolsHandler<Substream = TSubstream, OutEvent = TOutEvent>,
 
                 return Ok(Async::Ready(Some(NodeHandlerEvent::OutboundSubstreamRequest((proto, Either::Second(rq))))));
             },
+            // TODO: should wait for the other handler to close as well?
             Async::Ready(None) => return Ok(Async::Ready(None)),
             Async::NotReady => ()
         };
