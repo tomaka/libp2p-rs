@@ -84,18 +84,20 @@ fn build_struct(ast: &DeriveInput, data_struct: &DataStruct) -> TokenStream {
 
     // Build the `where ...` clause of the trait implementation.
     let where_clause = {
-        let additional = data_struct.fields.iter().map(|field| {
+        let mut additional = data_struct.fields.iter().map(|field| {
             let ty = &field.ty;
             quote!{#ty: #trait_to_impl<Substream = #substream_generic, OutEvent = #out_event_generic>}
         }).collect::<Vec<_>>();
 
+        additional.push(quote!{
+            #substream_generic: ::libp2p::tokio_io::AsyncRead + ::libp2p::tokio_io::AsyncWrite
+        });
+
         if let Some(in_where_clause) = in_where_clause {
             // TODO: correct with the coma?
             Some(quote!{#in_where_clause, #(#additional),*})
-        } else if !additional.is_empty() {
-            Some(quote!{where #(#additional),*})
         } else {
-            None
+            Some(quote!{where #(#additional),*})
         }
     };
 

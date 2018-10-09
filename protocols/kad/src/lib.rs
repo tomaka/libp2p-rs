@@ -90,5 +90,5 @@ mod handler;
 mod kbucket;
 mod protobuf_structs;
 mod protocol;
-mod query_layer;
+//mod query_layer;
 mod raw_layer;

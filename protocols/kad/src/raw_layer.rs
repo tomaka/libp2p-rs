@@ -45,6 +45,11 @@ impl<TInner> KademliaRawBehaviour<TInner> {
             marker: PhantomData,
         }
     }
+
+    /// Performs a `FIND_NODE` RPC request to a single node.
+    pub fn find_node(&mut self, target: &PeerId, searched: &PeerId) {
+        
+    }
 }
 
 impl<TTrans> KademliaRawBehaviour<TTrans> {
@@ -115,6 +120,16 @@ pub struct KademliaRequestId {
 pub enum KademliaRawBehaviourEvent {
     /// A node performs a FIND_NODE request towards us, and we should answer it.
     FindNodeRequest {
+        /// The node that made the request.
+        peer_id: PeerId,
+        /// The searched key.
+        key: PeerId,
+        /// Identifier to pass back when answering the query.
+        request_identifier: KademliaRequestId,
+    },
+
+    /// A node performs a FIND_NODE request towards us, and we should answer it.
+    FindNodeResult {
         /// The node that made the request.
         peer_id: PeerId,
         /// The searched key.
