@@ -80,6 +80,7 @@ extern crate tokio_timer;
 extern crate unsigned_varint;
 extern crate void;
 
+pub use self::handler::{KademliaHandler, KademliaHandlerEvent};
 //pub use self::high_level::{KadSystemConfig, KadSystem, KadQueryEvent};
 pub use self::protocol::{KadConnectionType, KadPeer};
 
@@ -89,4 +90,5 @@ mod handler;
 mod kbucket;
 mod protobuf_structs;
 mod protocol;
+mod query_layer;
 mod raw_layer;

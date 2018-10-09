@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use futures::prelude::*;
-use handler::{KademliaHandler, InEvent, OutEvent};
+use handler::{KademliaHandler, InEvent, KademliaHandlerEvent};
 use libp2p_core::{PeerId, StreamMuxer, Transport};
 use libp2p_core::nodes::{ProtocolsHandler, Substream, RawSwarmEvent, NetworkBehavior, NetworkBehaviorAction};
 use multihash::Multihash;
@@ -69,7 +69,7 @@ where TTrans: Transport<Output = (PeerId, TMuxer)> + Clone,
 
     fn inject_event(&mut self, event: &RawSwarmEvent<Self::Transport, <Self::ProtocolsHandler as ProtocolsHandler>::OutEvent>) {
         match event {
-            RawSwarmEvent::NodeEvent { peer_id, event: OutEvent::FindNodeReq { key } } => {
+            RawSwarmEvent::NodeEvent { peer_id, event: KademliaHandlerEvent::FindNodeReq { key } } => {
                 let ev = KademliaRawBehaviourEvent::FindNodeRequest {
                     peer_id: peer_id.clone(),
                     key: key.clone(),
@@ -80,7 +80,7 @@ where TTrans: Transport<Output = (PeerId, TMuxer)> + Clone,
 
                 self.pending_events.push_back(NetworkBehaviorAction::GenerateEvent(ev));
             },
-            RawSwarmEvent::NodeEvent { peer_id, event: OutEvent::AddProvider { key, provider_peer } } => {
+            RawSwarmEvent::NodeEvent { peer_id, event: KademliaHandlerEvent::AddProvider { key, provider_peer } } => {
                 let ev = KademliaRawBehaviourEvent::AddProvider {
                     peer_id: peer_id.clone(),
                     key: key.clone(),

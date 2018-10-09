@@ -30,6 +30,6 @@ pub mod swarm;
 
 pub use self::node::Substream;
 pub use self::handled_node::{NodeHandlerEvent, NodeHandlerEndpoint};
-pub use self::protocols_handler::ProtocolsHandler;
-pub use self::raw_swarm::RawSwarmEvent;
+pub use self::protocols_handler::{ProtocolsHandler, MapOutEvent};
+pub use self::raw_swarm::{ConnectedPoint, RawSwarmEvent};
 pub use self::swarm::{NetworkBehavior, NetworkBehaviorAction, Swarm};

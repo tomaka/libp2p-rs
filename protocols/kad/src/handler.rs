@@ -57,7 +57,7 @@ where TSubstream: AsyncRead + AsyncWrite,
 
 /// Event produced by the Kademlia handler.
 #[derive(Debug)]
-pub enum OutEvent {
+pub enum KademliaHandlerEvent {
     /// Opened a new Kademlia substream.
     Open,
 
@@ -184,7 +184,7 @@ impl<TSubstream> ProtocolsHandler for KademliaHandler<TSubstream>
 where TSubstream: AsyncRead + AsyncWrite + 'static,
 {
     type InEvent = InEvent;
-    type OutEvent = OutEvent;
+    type OutEvent = KademliaHandlerEvent;
     type Substream = TSubstream;
     type Protocol = KademliaProtocolConfig;
     type OutboundOpenInfo = ();
@@ -278,28 +278,28 @@ where TSubstream: AsyncRead + AsyncWrite + 'static,
                     Ok(Async::Ready(Some(KadMsg::FindNodeReq { key }))) => {
                         self.kademlia_substream = Some(stream);
                         self.send_queue.push_back(Async::NotReady);
-                        let ev = NodeHandlerEvent::Custom(OutEvent::FindNodeReq { key });
+                        let ev = NodeHandlerEvent::Custom(KademliaHandlerEvent::FindNodeReq { key });
                         return Ok(Async::Ready(Some(ev)));
                     },
                     Ok(Async::Ready(Some(KadMsg::FindNodeRes { closer_peers }))) => {
                         self.kademlia_substream = Some(stream);
-                        let ev = NodeHandlerEvent::Custom(OutEvent::FindNodeRes { closer_peers });
+                        let ev = NodeHandlerEvent::Custom(KademliaHandlerEvent::FindNodeRes { closer_peers });
                         return Ok(Async::Ready(Some(ev)));
                     },
                     Ok(Async::Ready(Some(KadMsg::GetProvidersReq { key }))) => {
                         self.kademlia_substream = Some(stream);
                         self.send_queue.push_back(Async::NotReady);
-                        let ev = NodeHandlerEvent::Custom(OutEvent::GetProvidersReq { key });
+                        let ev = NodeHandlerEvent::Custom(KademliaHandlerEvent::GetProvidersReq { key });
                         return Ok(Async::Ready(Some(ev)));
                     },
                     Ok(Async::Ready(Some(KadMsg::GetProvidersRes { closer_peers, provider_peers }))) => {
                         self.kademlia_substream = Some(stream);
-                        let ev = NodeHandlerEvent::Custom(OutEvent::GetProvidersRes { closer_peers, provider_peers });
+                        let ev = NodeHandlerEvent::Custom(KademliaHandlerEvent::GetProvidersRes { closer_peers, provider_peers });
                         return Ok(Async::Ready(Some(ev)));
                     },
                     Ok(Async::Ready(Some(KadMsg::AddProvider { key, provider_peer }))) => {
                         self.kademlia_substream = Some(stream);
-                        let ev = NodeHandlerEvent::Custom(OutEvent::AddProvider { key, provider_peer });
+                        let ev = NodeHandlerEvent::Custom(KademliaHandlerEvent::AddProvider { key, provider_peer });
                         return Ok(Async::Ready(Some(ev)));
                     },
                     Ok(Async::Ready(Some(KadMsg::Ping))) => {
@@ -324,11 +324,11 @@ where TSubstream: AsyncRead + AsyncWrite + 'static,
                         break;
                     },
                     Ok(Async::Ready(None)) => {
-                        let ev = NodeHandlerEvent::Custom(OutEvent::Closed(Ok(())));
+                        let ev = NodeHandlerEvent::Custom(KademliaHandlerEvent::Closed(Ok(())));
                         return Ok(Async::Ready(Some(ev)));
                     },
                     Err(err) => {
-                        let ev = NodeHandlerEvent::Custom(OutEvent::Closed(Err(err)));
+                        let ev = NodeHandlerEvent::Custom(KademliaHandlerEvent::Closed(Err(err)));
                         return Ok(Async::Ready(Some(ev)));
                     },
                 }

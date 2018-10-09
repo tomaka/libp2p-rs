@@ -207,7 +207,7 @@ fn build_struct(ast: &DeriveInput, data_struct: &DataStruct) -> TokenStream {
                 ::libp2p::core::upgrade::toggleable::Toggleable<
                     ::libp2p::core::upgrade::map::Map<
                         <#ty as #trait_to_impl>::Protocol,
-                        fn(<<#ty as #trait_to_impl>::Protocol as ::libp2p::ConnectionUpgrade<#substream_generic>>::Output) -> #either_output_ident<TProto1Out, TProto2Out>
+                        fn(<<#ty as #trait_to_impl>::Protocol as ::libp2p::ConnectionUpgrade<#substream_generic>>::Output) -> #out_event_generic
                     >
                 >
             };
@@ -219,7 +219,7 @@ fn build_struct(ast: &DeriveInput, data_struct: &DataStruct) -> TokenStream {
                 ref mut ev @ None => *ev = Some(field_proto),
             }
         }
-        protocol_ty.unwrap_or(quote!{::libp2p::upgrade::DummyProtocolUpgrade})
+        protocol_ty.unwrap_or(quote!{::libp2p::core::upgrade::DummyProtocolUpgrade})
     };
 
     // The `OutboundOpenInfo` associated type.
