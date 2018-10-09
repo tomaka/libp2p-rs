@@ -28,15 +28,15 @@ use std::collections::VecDeque;
 use std::io;
 use std::marker::PhantomData;
 
-/// Layer that propagates Kademlia messages to the outside.
-pub struct KademliaRawBehaviour<TTrans> {
+/// Layer that propagates Kademlia messages to the outside and matches requests with responses.
+pub struct KademliaRawBehaviour<TTrans, TUserData> {
     /// Events waiting to be propagated out through polling.
     pending_events: VecDeque<NetworkBehaviorAction<InEvent, KademliaRawBehaviourEvent>>,
     /// Marker to pin the generics.
-    marker: PhantomData<TTrans>,
+    marker: PhantomData<(TTrans, TUserData)>,       // TODO: remove TUserData
 }
 
-impl<TInner> KademliaRawBehaviour<TInner> {
+impl<TInner, TUserData> KademliaRawBehaviour<TInner, TUserData> {
     /// Creates a layer that handles Kademlia in the network.
     #[inline]
     pub fn new() -> Self {
@@ -47,7 +47,10 @@ impl<TInner> KademliaRawBehaviour<TInner> {
     }
 
     /// Performs a `FIND_NODE` RPC request to a single node.
-    pub fn find_node(&mut self, target: &PeerId, searched: &PeerId) {
+    ///
+    /// The user data will be returned as part of the response.
+    // TODO: what to do if we're not connected?
+    pub fn find_node(&mut self, user_data: TUserData, target: &PeerId, searched: &PeerId) {
         
     }
 }
