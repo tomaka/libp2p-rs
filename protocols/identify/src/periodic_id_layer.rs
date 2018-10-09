@@ -92,10 +92,4 @@ pub enum PeriodicIdentifyBehaviourEvent {
         /// Address the remote observes us as.
         observed_addr: Multiaddr,
     },
-
-    // TODO: to reimplement
-    /*/// The remote wants us to send back identification information.
-    ///
-    /// The `IdentificationRequest` object should be used to send the information.
-    IdentificationRequest(IdentificationRequest<TSubstream>),*/
 }
