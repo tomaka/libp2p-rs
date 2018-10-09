@@ -40,9 +40,9 @@ pub struct PeriodicIdentification<TSubstream> {
     /// Configuration for the protocol.
     config: Toggleable<IdentifyProtocolConfig>,
 
-    /// If `Some`, we successfully generated an `OutEvent` and we will produce it the next time
+    /// If `Some`, we successfully generated an `PeriodicIdentificationEvent` and we will produce it the next time
     /// `poll()` is invoked.
-    pending_result: Option<OutEvent>,
+    pending_result: Option<PeriodicIdentificationEvent>,
 
     /// Future that fires when we need to identify the node again. If `None`, means that we should
     /// shut down.
@@ -54,7 +54,7 @@ pub struct PeriodicIdentification<TSubstream> {
 
 /// Event produced by the periodic identifier.
 #[derive(Debug, Clone)]
-pub enum OutEvent {
+pub enum PeriodicIdentificationEvent {
 	/// We obtained identification information from the remote
 	Identified {
 		/// Information of the remote.
@@ -81,7 +81,7 @@ impl<TSubstream> ProtocolsHandler for PeriodicIdentification<TSubstream>
 where TSubstream: AsyncRead + AsyncWrite + Send + Sync + 'static,   // TODO: remove useless bounds
 {
     type InEvent = Void;
-    type OutEvent = OutEvent;
+    type OutEvent = PeriodicIdentificationEvent;
     type Substream = TSubstream;
     type Protocol = Toggleable<IdentifyProtocolConfig>;
     type OutboundOpenInfo = ();
@@ -96,7 +96,7 @@ where TSubstream: AsyncRead + AsyncWrite + Send + Sync + 'static,   // TODO: rem
     fn inject_fully_negotiated(&mut self, protocol: <Self::Protocol as ConnectionUpgrade<TSubstream>>::Output, _endpoint: NodeHandlerEndpoint<Self::OutboundOpenInfo>) {
         match protocol {
             IdentifyOutput::RemoteInfo { info, observed_addr } => {
-                self.pending_result = Some(OutEvent::Identified { info, observed_addr });
+                self.pending_result = Some(PeriodicIdentificationEvent::Identified { info, observed_addr });
             },
             IdentifyOutput::Sender { .. } => {
                 unreachable!("Sender can only be produced if we listen for the identify \
@@ -119,7 +119,7 @@ where TSubstream: AsyncRead + AsyncWrite + Send + Sync + 'static,   // TODO: rem
         self.next_id = None;
     }
 
-    fn poll(&mut self) -> Poll<Option<NodeHandlerEvent<(Self::Protocol, Self::OutboundOpenInfo), Self::OutEvent>>, io::Error> {
+    fn poll(&mut self) -> Poll<Option<NodeHandlerEvent<(Self::Protocol, Self::OutboundOpenInfo), PeriodicIdentificationEvent>>, io::Error> {
         if let Some(pending_result) = self.pending_result.take() {
             return Ok(Async::Ready(Some(NodeHandlerEvent::Custom(pending_result))));
         }
