@@ -55,7 +55,7 @@ impl<TInner, TUserData> KademliaRawBehaviour<TInner, TUserData> {
     }
 }
 
-impl<TTrans> KademliaRawBehaviour<TTrans> {
+impl<TTrans, TUserData> KademliaRawBehaviour<TTrans, TUserData> {
     /// Responds to a `FIND_NODE` request.
     // TODO: preserve order of answers
     pub fn respond_find_node<TPeers>(&mut self, id: KademliaRequestId, closer_peers: TPeers)
@@ -67,7 +67,7 @@ impl<TTrans> KademliaRawBehaviour<TTrans> {
     }
 }
 
-impl<TTrans, TMuxer> NetworkBehavior for KademliaRawBehaviour<TTrans>
+impl<TTrans, TMuxer, TUserData> NetworkBehavior for KademliaRawBehaviour<TTrans, TUserData>
 where TTrans: Transport<Output = (PeerId, TMuxer)> + Clone,
       TMuxer: StreamMuxer + 'static,
 {
