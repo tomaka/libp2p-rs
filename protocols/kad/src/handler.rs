@@ -185,7 +185,7 @@ pub enum KademliaHandlerIn<TUserData> {
         user_data: TUserData,
     },
 
-    /// Response to a `FindNodeReq`.
+    /// Response to a `GetProvidersReq`.
     GetProvidersRes {
         /// Nodes closest to the key.
         closer_peers: Vec<KadPeer>,
@@ -197,7 +197,10 @@ pub enum KademliaHandlerIn<TUserData> {
         request_id: KademliaRequestId,
     },
 
-    /// Indicates that this list of providers is known for this key.
+    /// Indicates that this provider is known for this key.
+    ///
+    /// The API of the handler doesn't expose any event that allows you to know whether this
+    /// succeeded.
     AddProvider {
         /// Key for which we should add providers.
         key: Multihash,
@@ -328,6 +331,8 @@ where TSubstream: AsyncRead + AsyncWrite + 'static,
 
     #[inline]
     fn inject_dial_upgrade_error(&mut self, (_, user_data): Self::OutboundOpenInfo, error: &io::Error) {
+        // TODO: cache the fact that the remote doesn't support kademlia at all, so that we don't
+        //       continue trying
         // FIXME: report as event that a request errored
     }
 
