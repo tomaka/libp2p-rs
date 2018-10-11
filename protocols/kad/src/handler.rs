@@ -303,9 +303,12 @@ where TSubstream: AsyncRead + AsyncWrite + 'static,
                         return Ok(Async::Ready(Some(ev)));
                     },
                     Ok(Async::Ready(Some(KadMsg::Ping))) => {
-                        // We never send pings, so whenever we receive a ping through Kademlia
-                        // we should answer with another ping.
-                        self.send_queue.push_back(Async::Ready(KadMsg::Ping));
+                        self.send_queue.push_back(Async::Ready(KadMsg::Pong));
+                    },
+                    Ok(Async::Ready(Some(KadMsg::Pong))) => {
+                        // We never send pings, so this should never be received.
+                        let err = io::Error::new(io::ErrorKind::Other, "Received PONG");
+                        return Err(err);
                     },
                     Ok(Async::Ready(Some(KadMsg::PutValue { .. }))) => {
                         let err = io::Error::new(io::ErrorKind::Other, "PUT_VALUE not implemented");

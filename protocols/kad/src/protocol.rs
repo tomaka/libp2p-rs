@@ -143,8 +143,8 @@ where
     }
 
     #[inline]
-    fn upgrade(self, incoming: C, _: (), _: Endpoint) -> Self::Future {
-        future::ok(kademlia_protocol(incoming))
+    fn upgrade(self, incoming: C, _: (), endpoint: Endpoint) -> Self::Future {
+        future::ok(kademlia_protocol(incoming, endpoint))
     }
 }
 
@@ -153,28 +153,46 @@ pub type KadStreamSink<S> = stream::AndThen<sink::With<stream::FromErr<Framed<S,
 // Upgrades a socket to use the Kademlia protocol.
 fn kademlia_protocol<S>(
     socket: S,
+    endpoint: Endpoint,
 ) -> KadStreamSink<S>
 where
     S: AsyncRead + AsyncWrite,
 {
+    let and_then = match endpoint {
+        Endpoint::Dialer => {
+            let f: fn(_) -> _ = |bytes: BytesMut| {
+                let response = protobuf::parse_from_bytes(&bytes)?;
+                proto_to_msg(response, Endpoint::Dialer)
+            };
+            f
+        },
+        Endpoint::Listener => {
+            let f: fn(_) -> _ = |bytes: BytesMut| {
+                let response = protobuf::parse_from_bytes(&bytes)?;
+                proto_to_msg(response, Endpoint::Listener)
+            };
+            f
+        },
+    };
+
     Framed::new(socket, codec::UviBytes::default())
         .from_err::<IoError>()
         .with::<_, fn(_) -> _, _>(|request| -> Result<_, IoError> {
             let proto_struct = msg_to_proto(request);
             Ok(proto_struct.write_to_bytes().unwrap()) // TODO: error?
         })
-        .and_then::<fn(_) -> _, _>(|bytes| {
-            let response = protobuf::parse_from_bytes(&bytes)?;
-            proto_to_msg(response)
-        })
+        .and_then(and_then)
 }
 
 /// Message that we can send to a peer or received from a peer.
 // TODO: document the rest
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KadMsg {
-    /// Ping request or response.
+    /// Ping request.
     Ping,
+
+    /// Ping response.
+    Pong,
 
     /// Target must save the given record, can be queried later with `GetValueReq`.
     PutValue {
@@ -190,8 +208,6 @@ pub enum KadMsg {
     },
 
     GetValueRes {
-        /// Identifier of the returned record.
-        key: Multihash,
         record: (), //record: Option<protobuf_structs::record::Record>, // TODO: no
         closer_peers: Vec<KadPeer>,
     },
@@ -236,7 +252,7 @@ pub enum KadMsg {
 // Turns a type-safe kadmelia message into the corresponding row protobuf message.
 fn msg_to_proto(kad_msg: KadMsg) -> protobuf_structs::dht::Message {
     match kad_msg {
-        KadMsg::Ping => {
+        KadMsg::Ping | KadMsg::Pong => {
             let mut msg = protobuf_structs::dht::Message::new();
             msg.set_field_type(protobuf_structs::dht::Message_MessageType::PING);
             msg
@@ -309,11 +325,15 @@ fn msg_to_proto(kad_msg: KadMsg) -> protobuf_structs::dht::Message {
 }
 
 /// Turns a raw Kademlia message into a type-safe message.
-fn proto_to_msg(mut message: protobuf_structs::dht::Message) -> Result<KadMsg, IoError> {
-    match message.get_field_type() {
-        protobuf_structs::dht::Message_MessageType::PING => Ok(KadMsg::Ping),
+fn proto_to_msg(mut message: protobuf_structs::dht::Message, origin: Endpoint)
+    -> Result<KadMsg, IoError>
+{
+    match (message.get_field_type(), origin) {
+        (protobuf_structs::dht::Message_MessageType::PING, Endpoint::Dialer) => Ok(KadMsg::Ping),
 
-        protobuf_structs::dht::Message_MessageType::PUT_VALUE => {
+        (protobuf_structs::dht::Message_MessageType::PING, Endpoint::Listener) => Ok(KadMsg::Pong),
+
+        (protobuf_structs::dht::Message_MessageType::PUT_VALUE, Endpoint::Dialer) => {
             let key = Multihash::from_bytes(message.take_key())
                 .map_err(|err| IoError::new(IoErrorKind::InvalidData, err))?;
             let _record = message.take_record();
@@ -323,64 +343,70 @@ fn proto_to_msg(mut message: protobuf_structs::dht::Message) -> Result<KadMsg, I
             })
         }
 
-        protobuf_structs::dht::Message_MessageType::GET_VALUE => {
+        (protobuf_structs::dht::Message_MessageType::PUT_VALUE, Endpoint::Listener) => {
+            Err(IoError::new(
+                IoErrorKind::InvalidData,
+                "received an unexpected PUT_VALUE message",
+            ))
+        }
+
+        (protobuf_structs::dht::Message_MessageType::GET_VALUE, Endpoint::Dialer) => {
             let key = Multihash::from_bytes(message.take_key())
                 .map_err(|err| IoError::new(IoErrorKind::InvalidData, err))?;
             Ok(KadMsg::GetValueReq { key: key })
         }
 
-        protobuf_structs::dht::Message_MessageType::FIND_NODE => {
-            if message.get_closerPeers().is_empty() {
-                let key = PeerId::from_bytes(message.take_key())
-                    .map_err(|_| IoError::new(IoErrorKind::InvalidData, "invalid peer id in FIND_NODE"))?;
-                Ok(KadMsg::FindNodeReq {
-                    key,
-                })
-
-            } else {
-                // TODO: for now we don't parse the peer properly, so it is possible that we get
-                //       parsing errors for peers even when they are valid ; we ignore these
-                //       errors for now, but ultimately we should just error altogether
-                let closer_peers = message.mut_closerPeers()
-                    .iter_mut()
-                    .filter_map(|peer| KadPeer::from_peer(peer).ok())
-                    .collect::<Vec<_>>();
-
-                Ok(KadMsg::FindNodeRes {
-                    closer_peers,
-                })
-            }
+        (protobuf_structs::dht::Message_MessageType::GET_VALUE, Endpoint::Listener) => {
+            Ok(KadMsg::GetValueRes {
+                record: (),
+                closer_peers: Vec::new(),       // TODO:
+            })
         }
 
-        protobuf_structs::dht::Message_MessageType::GET_PROVIDERS => {
-            if message.get_closerPeers().is_empty() {
-                let key = Multihash::from_bytes(message.take_key())
-                    .map_err(|err| IoError::new(IoErrorKind::InvalidData, err))?;
-                Ok(KadMsg::GetProvidersReq {
-                    key,
-                })
-
-            } else {
-                // TODO: for now we don't parse the peer properly, so it is possible that we get
-                //       parsing errors for peers even when they are valid ; we ignore these
-                //       errors for now, but ultimately we should just error altogether
-                let closer_peers = message.mut_closerPeers()
-                    .iter_mut()
-                    .filter_map(|peer| KadPeer::from_peer(peer).ok())
-                    .collect::<Vec<_>>();
-                let provider_peers = message.mut_providerPeers()
-                    .iter_mut()
-                    .filter_map(|peer| KadPeer::from_peer(peer).ok())
-                    .collect::<Vec<_>>();
-
-                Ok(KadMsg::GetProvidersRes {
-                    closer_peers,
-                    provider_peers,
-                })
-            }
+        (protobuf_structs::dht::Message_MessageType::FIND_NODE, Endpoint::Dialer) => {
+            let key = PeerId::from_bytes(message.take_key())
+                .map_err(|_| IoError::new(IoErrorKind::InvalidData, "invalid peer id in FIND_NODE"))?;
+            Ok(KadMsg::FindNodeReq {
+                key,
+            })
         }
 
-        protobuf_structs::dht::Message_MessageType::ADD_PROVIDER => {
+        (protobuf_structs::dht::Message_MessageType::FIND_NODE, Endpoint::Listener) => {
+            let closer_peers = message.mut_closerPeers()
+                .iter_mut()
+                .filter_map(|peer| KadPeer::from_peer(peer).ok())
+                .collect::<Vec<_>>();
+
+            Ok(KadMsg::FindNodeRes {
+                closer_peers,
+            })
+        }
+
+        (protobuf_structs::dht::Message_MessageType::GET_PROVIDERS, Endpoint::Dialer) => {
+            let key = Multihash::from_bytes(message.take_key())
+                .map_err(|err| IoError::new(IoErrorKind::InvalidData, err))?;
+            Ok(KadMsg::GetProvidersReq {
+                key,
+            })
+        }
+
+        (protobuf_structs::dht::Message_MessageType::GET_PROVIDERS, Endpoint::Listener) => {
+            let closer_peers = message.mut_closerPeers()
+                .iter_mut()
+                .filter_map(|peer| KadPeer::from_peer(peer).ok())
+                .collect::<Vec<_>>();
+            let provider_peers = message.mut_providerPeers()
+                .iter_mut()
+                .filter_map(|peer| KadPeer::from_peer(peer).ok())
+                .collect::<Vec<_>>();
+
+            Ok(KadMsg::GetProvidersRes {
+                closer_peers,
+                provider_peers,
+            })
+        }
+
+        (protobuf_structs::dht::Message_MessageType::ADD_PROVIDER, Endpoint::Dialer) => {
             // TODO: for now we don't parse the peer properly, so it is possible that we get
             //       parsing errors for peers even when they are valid ; we ignore these
             //       errors for now, but ultimately we should just error altogether
@@ -402,6 +428,13 @@ fn proto_to_msg(mut message: protobuf_structs::dht::Message) -> Result<KadMsg, I
                     "received an ADD_PROVIDER message with no valid peer",
                 ))
             }
+        }
+
+        (protobuf_structs::dht::Message_MessageType::ADD_PROVIDER, Endpoint::Listener) => {
+            Err(IoError::new(
+                IoErrorKind::InvalidData,
+                "received an unexpected ADD_PROVIDER message",
+            ))
         }
     }
 }
