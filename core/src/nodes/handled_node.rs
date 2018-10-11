@@ -76,6 +76,26 @@ pub enum NodeHandlerEndpoint<TOutboundOpenInfo> {
     Listener,
 }
 
+impl<TOutboundOpenInfo> NodeHandlerEndpoint<TOutboundOpenInfo> {
+    /// Returns true for `Dialer`.
+    #[inline]
+    pub fn is_dialer(&self) -> bool {
+        match self {
+            NodeHandlerEndpoint::Dialer(_) => true,
+            NodeHandlerEndpoint::Listener => false,
+        }
+    }
+
+    /// Returns true for `Listener`.
+    #[inline]
+    pub fn is_listener(&self) -> bool {
+        match self {
+            NodeHandlerEndpoint::Dialer(_) => false,
+            NodeHandlerEndpoint::Listener => true,
+        }
+    }
+}
+
 /// Event produces by a handler.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum NodeHandlerEvent<TOutboundOpenInfo, TCustom> {

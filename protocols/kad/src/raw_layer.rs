@@ -88,6 +88,17 @@ where TTrans: Transport<Output = (PeerId, TMuxer)> + Clone,
 
                 self.pending_events.push_back(NetworkBehaviorAction::GenerateEvent(ev));
             },
+            RawSwarmEvent::NodeEvent { peer_id, event: KademliaHandlerEvent::FindNodeRes { closer_peers } } => {
+                let ev = KademliaRawBehaviourEvent::FindNodeRequest {
+                    peer_id: peer_id.clone(),
+                    key: key.clone(),
+                    request_identifier: KademliaRequestId {
+                        target: peer_id.clone(),
+                    },
+                };
+
+                self.pending_events.push_back(NetworkBehaviorAction::GenerateEvent(ev));
+            },
             RawSwarmEvent::NodeEvent { peer_id, event: KademliaHandlerEvent::AddProvider { key, provider_peer } } => {
                 let ev = KademliaRawBehaviourEvent::AddProvider {
                     peer_id: peer_id.clone(),
