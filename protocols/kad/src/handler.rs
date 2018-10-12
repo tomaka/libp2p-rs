@@ -226,15 +226,38 @@ struct UniqueConnecId(u64);
 impl<TSubstream, TUserData> KademliaHandler<TSubstream, TUserData>
 where TSubstream: AsyncRead + AsyncWrite,
 {
-    /// Create a new `KademliaHandler`.
-    pub fn new() -> Self {
+    /// Create a `KademliaHandler` that only allows sending messages to the remote but denying
+    /// incoming connections.
+    #[inline]
+    pub fn dial_only() -> Self {
+        KademliaHandler::with_allow_listening(false)
+    }
+
+    /// Create a `KademliaHandler` that only allows sending messages but also receive incoming
+    /// requests.
+    ///
+    /// The `Default` trait implementation wraps around this function.
+    #[inline]
+    pub fn dial_and_listen() -> Self {
+        KademliaHandler::with_allow_listening(true)
+    }
+
+    fn with_allow_listening(allow_listening: bool) -> Self {
         KademliaHandler {
             config: upgrade::toggleable(Default::default()),
             shutting_down: false,
-            allow_listening: true,
+            allow_listening,
             next_connec_unique_id: UniqueConnecId(0),
             substreams: Vec::new(),
         }
+    }
+}
+
+impl<TSubstream, TUserData> Default for KademliaHandler<TSubstream, TUserData>
+where TSubstream: AsyncRead + AsyncWrite,
+{
+    fn default() -> Self {
+        KademliaHandler::dial_and_listen()
     }
 }
 

@@ -71,7 +71,7 @@ impl<TTrans, TMuxer, TUserData> NetworkBehavior for KademliaRawBehaviour<TTrans,
 where TTrans: Transport<Output = (PeerId, TMuxer)> + Clone,
       TMuxer: StreamMuxer + 'static,
 {
-    type ProtocolsHandler = KademliaHandler<Substream<TMuxer>>;
+    type ProtocolsHandler = KademliaHandler<Substream<TMuxer>, TUserData>;
     type Transport = TTrans;
     type OutEvent = KademliaRawBehaviourEvent<TUserData>;
 
