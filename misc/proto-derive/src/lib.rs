@@ -26,7 +26,7 @@ extern crate syn;
 #[macro_use]
 extern crate quote;
 
-use proc_macro::TokenStream;
+use self::proc_macro::TokenStream;
 use syn::{DeriveInput, Data, DataStruct, Ident};
 
 #[proc_macro_derive(ProtocolsHandler)]
