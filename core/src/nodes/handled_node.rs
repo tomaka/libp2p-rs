@@ -24,9 +24,6 @@ use futures::prelude::*;
 use std::io::Error as IoError;
 
 /// Handler for the substreams of a node.
-///
-/// > Note: When implementing the various methods, don't forget that you have to register the
-/// > task that was the latest to poll and notify it.
 // TODO: right now it is possible for a node handler to be built, then shut down right after if we
 //       realize we dialed the wrong peer for example ; this could be surprising and should either
 //       be documented or changed (favouring the "documented" right now)
