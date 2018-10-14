@@ -42,7 +42,7 @@ where TBehaviour: NetworkBehavior,
     behaviour: TBehaviour,
 }
 
-// TODO: document
+// TODO: remove
 pub struct LocalBuilder<TProtocolsHandler>(PhantomData<TProtocolsHandler>);
 impl<TProtocolsHandler> HandlerFactory for LocalBuilder<TProtocolsHandler>
 where TProtocolsHandler: ProtocolsHandler + Default,
@@ -132,6 +132,7 @@ where TBehaviour: NetworkBehavior,
                     let _ = self.raw_swarm.dial(addr);
                 },
                 Async::Ready(Some(NetworkBehaviorAction::DialPeer(peer_id))) => {
+                    // TODO: how to even do that
                     unimplemented!()
                 },
                 Async::Ready(Some(NetworkBehaviorAction::SendEventIfExists(peer_id, event))) => {
@@ -197,6 +198,7 @@ pub trait NetworkBehavior {
     /// Polls for things that swarm should do.
     ///
     /// This API mimics the API of the `Stream` trait.
+    // TODO: debate about the `Option`
     fn poll(&mut self) -> Poll<Option<NetworkBehaviorAction<<Self::ProtocolsHandler as ProtocolsHandler>::InEvent, Self::OutEvent>>, io::Error>;
 }
 
