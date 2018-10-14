@@ -42,6 +42,9 @@ pub struct PeriodicPingHandler<TSubstream> {
     /// Configuration for the ping protocol.
     ping_config: Ping<Instant>,
 
+    /// If true, we're in the shutdown process.
+    shutdown: bool,
+
     /// True if we're upgrading a dialing ping substream.
     upgrading: bool,
     /// Substream open for sending pings, if any.
@@ -74,6 +77,7 @@ impl<TSubstream> PeriodicPingHandler<TSubstream> {
     pub fn new() -> PeriodicPingHandler<TSubstream> {
         PeriodicPingHandler {
             ping_config: Default::default(),
+            shutdown: false,
             ping_in_substreams: Vec::with_capacity(1),
             ping_out_substream: None,
             active_ping_out: None,
@@ -144,8 +148,13 @@ where TSubstream: AsyncRead + AsyncWrite,
     }
 
     fn poll(&mut self) -> Poll<Option<NodeHandlerEvent<(Self::Protocol, Self::OutboundOpenInfo), Self::OutEvent>>, io::Error> {
+        // Special case if shutting down.
+        if self.shutdown && self.ping_out_substream.is_none() && self.ping_in_substreams.is_empty() {
+            return Ok(Async::Ready(None));
+        }
+
         // Open a ping substream if necessary.
-        if self.ping_out_substream.is_none() && !self.upgrading {
+        if self.ping_out_substream.is_none() && !self.upgrading && !self.shutdown {
             if self.active_ping_out.is_none() {
                 let future = Delay::new(Instant::now() + PING_TIMEOUT);
                 self.active_ping_out = Some(future);
@@ -202,6 +211,7 @@ where TSubstream: AsyncRead + AsyncWrite,
             match deadline.poll() {
                 Ok(Async::Ready(())) => {
                     self.ping_out_substream = None;
+                    self.shutdown = true;
                     return Ok(Async::Ready(Some(NodeHandlerEvent::Custom(OutEvent::Unresponsive))))
                 },
                 Ok(Async::NotReady) => self.active_ping_out = Some(deadline),

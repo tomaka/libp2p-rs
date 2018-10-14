@@ -125,16 +125,14 @@ where TBehaviour: NetworkBehavior,
                 Async::Ready(Some(NetworkBehaviorAction::GenerateEvent(event))) => {
                     return Ok(Async::Ready(Some(event)));
                 },
-                Async::Ready(Some(NetworkBehaviorAction::DisconnectIfExists(peer_id))) => {
-                    if let Some(peer) = self.raw_swarm.peer(peer_id).as_connected() {
-                        peer.close();
-                    }
-                },
                 Async::Ready(Some(NetworkBehaviorAction::DialAddress(addr))) => {
                     // TODO: if the address is not supported, this should produce an error in the
                     //       stream of events ; alternatively, we could mention that the address
                     //       is ignored if not supported in the docs of DialAddress
                     let _ = self.raw_swarm.dial(addr);
+                },
+                Async::Ready(Some(NetworkBehaviorAction::DialPeer(peer_id))) => {
+                    unimplemented!()
                 },
                 Async::Ready(Some(NetworkBehaviorAction::SendEventIfExists(peer_id, event))) => {
                     if let Some(mut peer) = self.raw_swarm.peer(peer_id).as_connected() {
@@ -207,10 +205,10 @@ pub trait NetworkBehavior {
 pub enum NetworkBehaviorAction<TInEvent, TOutEvent> {
     /// Generate an outside event.
     GenerateEvent(TOutEvent),
-    /// Disconnect the given peer if we are connected to it.
-    DisconnectIfExists(PeerId),
     /// Instructs the swarm to dial the given multiaddress.
     DialAddress(Multiaddr),
+    /// Instructs the swarm to reach the given peer.
+    DialPeer(PeerId),
     /// Sends an event to a node if we're connected to it.
     SendEventIfExists(PeerId, TInEvent),
 }
