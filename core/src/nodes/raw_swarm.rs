@@ -59,8 +59,8 @@ struct ReachAttempts {
     /// the peer ID.
     other_reach_attempts: Vec<(ReachAttemptId, ConnectedPoint)>,
 
-    /// For each peer ID we're connected to, contains the multiaddress we're connected to.
-    connected_multiaddresses: FnvHashMap<PeerId, Multiaddr>,
+    /// For each peer ID we're connected to, contains the endpoint we're connected to.
+    connected_points: FnvHashMap<PeerId, ConnectedPoint>,
 }
 
 /// Attempt to reach a peer.
@@ -120,8 +120,8 @@ where
     Replaced {
         /// Id of the peer.
         peer_id: PeerId,
-        /// Multiaddr we were connected to, or `None` if it was unknown.
-        closed_multiaddr: Option<Multiaddr>,
+        /// Endpoint we were connected to.
+        closed_endpoint: ConnectedPoint,
         /// If `Listener`, then we received the connection. If `Dial`, then it's a connection that
         /// we opened.
         endpoint: ConnectedPoint,
@@ -134,16 +134,16 @@ where
     NodeClosed {
         /// Identifier of the node.
         peer_id: PeerId,
-        /// Address we were connected to. `None` if not known.
-        address: Option<Multiaddr>,
+        /// Endpoint we were connected to.
+        endpoint: ConnectedPoint,
     },
 
     /// The muxer of a node has produced an error.
     NodeError {
         /// Identifier of the node.
         peer_id: PeerId,
-        /// Address we were connected to. `None` if not known.
-        address: Option<Multiaddr>,
+        /// Endpoint we were connected to.
+        endpoint: ConnectedPoint,
         /// The error that happened.
         error: IoError,
     },
@@ -221,14 +221,14 @@ where
             RawSwarmEvent::Connected { peer_id, endpoint } => {
                 RawSwarmEvent::Connected { peer_id, endpoint }
             },
-            RawSwarmEvent::Replaced { peer_id, closed_multiaddr, endpoint } => {
-                RawSwarmEvent::Replaced { peer_id, closed_multiaddr, endpoint }
+            RawSwarmEvent::Replaced { peer_id, closed_endpoint, endpoint } => {
+                RawSwarmEvent::Replaced { peer_id, closed_endpoint, endpoint }
             },
-            RawSwarmEvent::NodeClosed { peer_id, address } => {
-                RawSwarmEvent::NodeClosed { peer_id, address }
+            RawSwarmEvent::NodeClosed { peer_id, endpoint } => {
+                RawSwarmEvent::NodeClosed { peer_id, endpoint }
             },
-            RawSwarmEvent::NodeError { peer_id, address, error } => {
-                RawSwarmEvent::NodeError { peer_id, address, error }
+            RawSwarmEvent::NodeError { peer_id, endpoint, error } => {
+                RawSwarmEvent::NodeError { peer_id, endpoint, error }
             },
             RawSwarmEvent::DialError { remain_addrs_attempt, peer_id, multiaddr, error } => {
                 RawSwarmEvent::DialError { remain_addrs_attempt, peer_id, multiaddr, error }
@@ -263,14 +263,14 @@ where
             RawSwarmEvent::Connected { peer_id, endpoint } => {
                 Some(RawSwarmEvent::Connected { peer_id, endpoint })
             },
-            RawSwarmEvent::Replaced { peer_id, closed_multiaddr, endpoint } => {
-                Some(RawSwarmEvent::Replaced { peer_id, closed_multiaddr, endpoint })
+            RawSwarmEvent::Replaced { peer_id, closed_endpoint, endpoint } => {
+                Some(RawSwarmEvent::Replaced { peer_id, closed_endpoint, endpoint })
             },
-            RawSwarmEvent::NodeClosed { peer_id, address } => {
-                Some(RawSwarmEvent::NodeClosed { peer_id, address })
+            RawSwarmEvent::NodeClosed { peer_id, endpoint } => {
+                Some(RawSwarmEvent::NodeClosed { peer_id, endpoint })
             },
-            RawSwarmEvent::NodeError { peer_id, address, error } => {
-                Some(RawSwarmEvent::NodeError { peer_id, address, error })
+            RawSwarmEvent::NodeError { peer_id, endpoint, error } => {
+                Some(RawSwarmEvent::NodeError { peer_id, endpoint, error })
             },
             RawSwarmEvent::DialError { remain_addrs_attempt, peer_id, multiaddr, error } => {
                 Some(RawSwarmEvent::DialError { remain_addrs_attempt, peer_id, multiaddr, error })
@@ -390,7 +390,7 @@ where
             reach_attempts: ReachAttempts {
                 out_reach_attempts: Default::default(),
                 other_reach_attempts: Vec::new(),
-                connected_multiaddresses: Default::default(),
+                connected_points: Default::default(),
             },
             handler_build,
         }
@@ -504,12 +504,12 @@ where
                     .peer_mut(&peer_id)
                     .expect("we checked for Some just above"),
                 peer_id,
-                connected_multiaddresses: &mut self.reach_attempts.connected_multiaddresses,
+                connected_points: &mut self.reach_attempts.connected_points,
             });
         }
 
         if self.reach_attempts.out_reach_attempts.get_mut(&peer_id).is_some() {
-            debug_assert!(!self.reach_attempts.connected_multiaddresses.contains_key(&peer_id));
+            debug_assert!(!self.reach_attempts.connected_points.contains_key(&peer_id));
             return Peer::PendingConnect(PeerPendingConnect {
                 attempt: match self.reach_attempts.out_reach_attempts.entry(peer_id.clone()) {
                     Entry::Occupied(e) => e,
@@ -519,7 +519,7 @@ where
             });
         }
 
-        debug_assert!(!self.reach_attempts.connected_multiaddresses.contains_key(&peer_id));
+        debug_assert!(!self.reach_attempts.connected_points.contains_key(&peer_id));
         Peer::NotConnected(PeerNotConnected {
             nodes: self,
             peer_id,
@@ -636,20 +636,30 @@ where
                     peer_id,
                     error,
                 }) => {
-                    let address = self.reach_attempts.connected_multiaddresses.remove(&peer_id);
+                    let endpoint = self.reach_attempts.connected_points.remove(&peer_id)
+                        .expect("We insert into connected_points whenever a connection is \
+                                 opened and remove only when a connection is closed ; the \
+                                 underlying API is guaranteed to always deliver a connection \
+                                 closed message after it has been opened, and no two closed \
+                                 messages ; qed");
                     debug_assert!(!self.reach_attempts.out_reach_attempts.contains_key(&peer_id));
                     action = Default::default();
                     out_event = RawSwarmEvent::NodeError {
                         peer_id,
-                        address,
+                        endpoint,
                         error,
                     };
                 }
                 Async::Ready(CollectionEvent::NodeClosed { peer_id }) => {
-                    let address = self.reach_attempts.connected_multiaddresses.remove(&peer_id);
+                    let endpoint = self.reach_attempts.connected_points.remove(&peer_id)
+                        .expect("We insert into connected_points whenever a connection is \
+                                 opened and remove only when a connection is closed ; the \
+                                 underlying API is guaranteed to always deliver a connection \
+                                 closed message after it has been opened, and no two closed \
+                                 messages ; qed");
                     debug_assert!(!self.reach_attempts.out_reach_attempts.contains_key(&peer_id));
                     action = Default::default();
-                    out_event = RawSwarmEvent::NodeClosed { peer_id, address };
+                    out_event = RawSwarmEvent::NodeClosed { peer_id, endpoint };
                 }
                 Async::Ready(CollectionEvent::NodeEvent { peer_id, event }) => {
                     action = Default::default();
@@ -714,10 +724,11 @@ where
         .iter()
         .position(|i| i.0 == event.reach_attempt_id())
     {
-        let (_, endpoint) = reach_attempts.other_reach_attempts.swap_remove(in_pos);
+        let (_, opened_endpoint) = reach_attempts.other_reach_attempts.swap_remove(in_pos);
 
-        // Clear the known multiaddress for this peer.
-        let closed_multiaddr = reach_attempts.connected_multiaddresses.remove(&event.peer_id());
+        // Set the endpoint for this peer.
+        let closed_endpoint = reach_attempts.connected_points.insert(event.peer_id().clone(), opened_endpoint.clone());
+                     
         // Cancel any outgoing attempt to this peer.
         let action = if let Some(attempt) = reach_attempts.out_reach_attempts.remove(&event.peer_id()) {
             debug_assert_ne!(attempt.id, event.reach_attempt_id());
@@ -731,13 +742,18 @@ where
 
         let (outcome, peer_id) = event.accept();
         if outcome == CollectionNodeAccept::ReplacedExisting {
+            let closed_endpoint = closed_endpoint
+                .expect("We insert into connected_points whenever a connection is opened and \
+                         remove only when a connection is closed ; the underlying API is \
+                         guaranteed to always deliver a connection closed message after it has \
+                         been opened, and no two closed messages ; qed");
             return (action, RawSwarmEvent::Replaced {
                 peer_id,
-                endpoint,
-                closed_multiaddr,
+                endpoint: opened_endpoint,
+                closed_endpoint,
             });
         } else {
-            return (action, RawSwarmEvent::Connected { peer_id, endpoint });
+            return (action, RawSwarmEvent::Connected { peer_id, endpoint: opened_endpoint });
         }
     }
 
@@ -755,21 +771,26 @@ where
             .expect("is_outgoing_and_ok is true only if reach_attempts.out_reach_attempts.get(event.peer_id()) \
                         returned Some");
 
-        let closed_multiaddr = reach_attempts.connected_multiaddresses
-            .insert(event.peer_id().clone(), attempt.cur_attempted.clone());
-        let endpoint = ConnectedPoint::Dialer {
+        let opened_endpoint = ConnectedPoint::Dialer {
             address: attempt.cur_attempted,
         };
+
+        let closed_endpoint = reach_attempts.connected_points
+            .insert(event.peer_id().clone(), opened_endpoint.clone())
+            .expect("We insert into connected_points whenever a connection is opened and remove \
+                     only when a connection is closed ; the underlying API is guaranteed to always \
+                     deliver a connection closed message after it has been opened, and no two \
+                     closed messages ; qed");
 
         let (outcome, peer_id) = event.accept();
         if outcome == CollectionNodeAccept::ReplacedExisting {
             return (Default::default(), RawSwarmEvent::Replaced {
                 peer_id,
-                endpoint,
-                closed_multiaddr,
+                endpoint: opened_endpoint,
+                closed_endpoint,
             });
         } else {
-            return (Default::default(), RawSwarmEvent::Connected { peer_id, endpoint });
+            return (Default::default(), RawSwarmEvent::Connected { peer_id, endpoint: opened_endpoint });
         }
     }
 
@@ -1043,8 +1064,8 @@ impl<'a, TInEvent, TOutEvent> PeerPotentialConnect<'a, TInEvent, TOutEvent> {
 /// Access to a peer we are connected to.
 pub struct PeerConnected<'a, TInEvent: 'a> {
     peer: CollecPeerMut<'a, TInEvent>,
-    /// Reference to the `connected_multiaddresses` field of the parent.
-    connected_multiaddresses: &'a mut FnvHashMap<PeerId, Multiaddr>,
+    /// Reference to the `connected_points` field of the parent.
+    connected_points: &'a mut FnvHashMap<PeerId, ConnectedPoint>,
     peer_id: PeerId,
 }
 
@@ -1055,14 +1076,19 @@ impl<'a, TInEvent> PeerConnected<'a, TInEvent> {
     // TODO: consider returning a `PeerNotConnected` ; however this makes all the borrows things
     // much more annoying to deal with
     pub fn close(self) {
-        self.connected_multiaddresses.remove(&self.peer_id);
+        self.connected_points.remove(&self.peer_id);
         self.peer.close()
     }
 
-    /// Returns the outcome of the future that resolves the multiaddress of the peer.
+    /// Returns the endpoint we're connected to.
     #[inline]
-    pub fn multiaddr(&self) -> Option<&Multiaddr> {
-        self.connected_multiaddresses.get(&self.peer_id)
+    pub fn endpoint(&self) -> &ConnectedPoint {
+        self.connected_points.get(&self.peer_id)
+            .expect("We insert into connected_points whenever a connection is opened and remove \
+                     only when a connection is closed ; the underlying API is guaranteed to always \
+                     deliver a connection closed message after it has been opened, and no two \
+                     closed messages ; qed")
+        
     }
 
     /// Sends an event to the node.
