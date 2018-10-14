@@ -248,6 +248,7 @@ pub struct Task<'a, TInEvent: 'a> {
 
 impl<'a, TInEvent> Task<'a, TInEvent> {
     /// Sends an event to the given node.
+    // TODO: report back on delivery
     #[inline]
     pub fn send_event(&mut self, event: TInEvent) {
         // It is possible that the sender is closed if the background task has already finished

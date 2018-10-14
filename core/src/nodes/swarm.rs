@@ -135,7 +135,7 @@ where TBehaviour: NetworkBehavior,
                     // TODO: how to even do that
                     unimplemented!()
                 },
-                Async::Ready(Some(NetworkBehaviorAction::SendEventIfExists(peer_id, event))) => {
+                Async::Ready(Some(NetworkBehaviorAction::SendEventOrDial(peer_id, event))) => {
                     if let Some(mut peer) = self.raw_swarm.peer(peer_id).as_connected() {
                         peer.send_event(event);
                     }
@@ -219,5 +219,5 @@ pub enum NetworkBehaviorAction<TInEvent, TOutEvent> {
     /// If we're not connected to this peer, attempts to open a connection to it, then sends the
     /// message.
     // TODO: ^ meh ; should somehow ensure delivery or something
-    SendEventIfExists(PeerId, TInEvent),
+    SendEventOrDial(PeerId, TInEvent),
 }
