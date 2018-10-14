@@ -192,7 +192,7 @@ impl<TInEvent, TOutEvent> HandledNodesTasks<TInEvent, TOutEvent> {
     }
 
     /// Provides an API similar to `Stream`, except that it cannot error.
-    pub fn poll(&mut self) -> Async<Option<HandledNodesEvent<TOutEvent>>> {
+    pub fn poll(&mut self) -> Async<HandledNodesEvent<TOutEvent>> {
         for to_spawn in self.to_spawn.drain() {
             tokio_executor::spawn(to_spawn);
         }
@@ -209,22 +209,22 @@ impl<TInEvent, TOutEvent> HandledNodesTasks<TInEvent, TOutEvent> {
 
                     match message {
                         InToExtMessage::NodeEvent(event) => {
-                            break Async::Ready(Some(HandledNodesEvent::NodeEvent {
+                            break Async::Ready(HandledNodesEvent::NodeEvent {
                                 id: task_id,
                                 event,
-                            }));
+                            });
                         },
                         InToExtMessage::NodeReached(peer_id) => {
-                            break Async::Ready(Some(HandledNodesEvent::NodeReached {
+                            break Async::Ready(HandledNodesEvent::NodeReached {
                                 id: task_id,
                                 peer_id,
-                            }));
+                            });
                         },
                         InToExtMessage::TaskClosed(result) => {
                             let _ = self.tasks.remove(&task_id);
-                            break Async::Ready(Some(HandledNodesEvent::TaskClosed {
+                            break Async::Ready(HandledNodesEvent::TaskClosed {
                                 id: task_id, result
-                            }));
+                            });
                         },
                     }
                 }
@@ -284,7 +284,7 @@ impl<TInEvent, TOutEvent> Stream for HandledNodesTasks<TInEvent, TOutEvent> {
 
     #[inline]
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        Ok(self.poll())
+        Ok(self.poll().map(Option::Some))
     }
 }
 

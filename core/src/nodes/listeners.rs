@@ -131,7 +131,7 @@ where
     }
 
     /// Provides an API similar to `Stream`, except that it cannot error.
-    pub fn poll(&mut self) -> Async<Option<ListenersEvent<TTrans>>> {
+    pub fn poll(&mut self) -> Async<ListenersEvent<TTrans>> {
         // We remove each element from `listeners` one by one and add them back.
         for n in (0..self.listeners.len()).rev() {
             let mut listener = self.listeners.swap_remove(n);
@@ -142,25 +142,25 @@ where
                 Ok(Async::Ready(Some((upgrade, send_back_addr)))) => {
                     let listen_addr = listener.address.clone();
                     self.listeners.push(listener);
-                    return Async::Ready(Some(ListenersEvent::Incoming {
+                    return Async::Ready(ListenersEvent::Incoming {
                         upgrade,
                         listen_addr,
                         send_back_addr,
-                    }));
+                    });
                 }
                 Ok(Async::Ready(None)) => {
-                    return Async::Ready(Some(ListenersEvent::Closed {
+                    return Async::Ready(ListenersEvent::Closed {
                         listen_addr: listener.address,
                         listener: listener.listener,
                         result: Ok(()),
-                    }));
+                    });
                 }
                 Err(err) => {
-                    return Async::Ready(Some(ListenersEvent::Closed {
+                    return Async::Ready(ListenersEvent::Closed {
                         listen_addr: listener.address,
                         listener: listener.listener,
                         result: Err(err),
-                    }));
+                    });
                 }
             }
         }
@@ -179,7 +179,7 @@ where
 
     #[inline]
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        Ok(self.poll())
+        Ok(self.poll().map(Option::Some))
     }
 }
 

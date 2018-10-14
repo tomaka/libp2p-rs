@@ -567,8 +567,7 @@ where
     }
 
     /// Provides an API similar to `Stream`, except that it cannot error.
-    // TODO: why Option?
-    pub fn poll(&mut self) -> Async<Option<RawSwarmEvent<TTrans, TOutEvent>>>
+    pub fn poll(&mut self) -> Async<RawSwarmEvent<TTrans, TOutEvent>>
     where
         TTrans: Transport<Output = (PeerId, TMuxer)> + Clone,
         TTrans::Dial: Send + 'static,
@@ -585,11 +584,11 @@ where
         // Start by polling the listeners for events.
         match self.listeners.poll() {
             Async::NotReady => (),
-            Async::Ready(Some(ListenersEvent::Incoming {
+            Async::Ready(ListenersEvent::Incoming {
                 upgrade,
                 listen_addr,
                 send_back_addr,
-            })) => {
+            }) => {
                 let connected_point = ConnectedPoint::Listener {
                     listen_addr: listen_addr.clone(),
                     send_back_addr: send_back_addr.clone(),
@@ -600,23 +599,22 @@ where
                     id,
                     connected_point,
                 ));
-                return Async::Ready(Some(RawSwarmEvent::IncomingConnection {
+                return Async::Ready(RawSwarmEvent::IncomingConnection {
                     listen_addr,
                     send_back_addr,
-                }));
+                });
             }
-            Async::Ready(Some(ListenersEvent::Closed {
+            Async::Ready(ListenersEvent::Closed {
                 listen_addr,
                 listener,
                 result,
-            })) => {
-                return Async::Ready(Some(RawSwarmEvent::ListenerClosed {
+            }) => {
+                return Async::Ready(RawSwarmEvent::ListenerClosed {
                     listen_addr,
                     listener,
                     result,
-                }));
+                });
             }
-            Async::Ready(None) => unreachable!("The listeners stream never finishes"),
         }
 
         // Poll the existing nodes.
@@ -624,20 +622,20 @@ where
             let (action, out_event);
             match self.active_nodes.poll() {
                 Async::NotReady => break,
-                Async::Ready(Some(CollectionEvent::NodeReached(reach_event))) => {
+                Async::Ready(CollectionEvent::NodeReached(reach_event)) => {
                     let (a, e) = handle_node_reached(&mut self.reach_attempts, reach_event);
                     action = a;
                     out_event = e;
                 }
-                Async::Ready(Some(CollectionEvent::ReachError { id, error })) => {
+                Async::Ready(CollectionEvent::ReachError { id, error }) => {
                     let (a, e) = handle_reach_error(&mut self.reach_attempts, id, error);
                     action = a;
                     out_event = e;
                 }
-                Async::Ready(Some(CollectionEvent::NodeError {
+                Async::Ready(CollectionEvent::NodeError {
                     peer_id,
                     error,
-                })) => {
+                }) => {
                     let address = self.reach_attempts.connected_multiaddresses.remove(&peer_id);
                     debug_assert!(!self.reach_attempts.out_reach_attempts.contains_key(&peer_id));
                     action = Default::default();
@@ -647,17 +645,16 @@ where
                         error,
                     };
                 }
-                Async::Ready(Some(CollectionEvent::NodeClosed { peer_id })) => {
+                Async::Ready(CollectionEvent::NodeClosed { peer_id }) => {
                     let address = self.reach_attempts.connected_multiaddresses.remove(&peer_id);
                     debug_assert!(!self.reach_attempts.out_reach_attempts.contains_key(&peer_id));
                     action = Default::default();
                     out_event = RawSwarmEvent::NodeClosed { peer_id, address };
                 }
-                Async::Ready(Some(CollectionEvent::NodeEvent { peer_id, event })) => {
+                Async::Ready(CollectionEvent::NodeEvent { peer_id, event }) => {
                     action = Default::default();
                     out_event = RawSwarmEvent::NodeEvent { peer_id, event };
                 }
-                Async::Ready(None) => unreachable!("CollectionStream never ends"),
             };
 
             if let Some((peer_id, first, rest)) = action.start_dial_out {
@@ -676,7 +673,7 @@ where
                              attempts ; qed");
             }
 
-            return Async::Ready(Some(out_event));
+            return Async::Ready(out_event);
         }
 
         Async::NotReady
@@ -1230,6 +1227,6 @@ where
 
     #[inline]
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        Ok(self.poll())
+        Ok(self.poll().map(Option::Some))
     }
 }

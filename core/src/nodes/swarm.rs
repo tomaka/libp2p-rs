@@ -117,8 +117,7 @@ where TBehaviour: NetworkBehavior,
             let mut raw_swarm_not_ready = false;
 
             match self.raw_swarm.poll() {
-                Async::Ready(Some(event)) => self.behaviour.inject_event(&event),
-                Async::Ready(None) => unreachable!(),       // TODO:
+                Async::Ready(event) => self.behaviour.inject_event(&event),
                 Async::NotReady => raw_swarm_not_ready = true,
             };
 

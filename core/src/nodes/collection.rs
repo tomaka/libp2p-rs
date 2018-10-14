@@ -361,42 +361,42 @@ impl<TInEvent, TOutEvent> CollectionStream<TInEvent, TOutEvent> {
     /// > **Note**: we use a regular `poll` method instead of implementing `Stream` in order to
     /// > remove the `Err` variant, but also because we want the `CollectionStream` to stay
     /// > borrowed if necessary.
-    pub fn poll(&mut self) -> Async<Option<CollectionEvent<TInEvent, TOutEvent>>> {
+    pub fn poll(&mut self) -> Async<CollectionEvent<TInEvent, TOutEvent>> {
         let item = match self.inner.poll() {
             Async::Ready(item) => item,
             Async::NotReady => return Async::NotReady,
         };
 
         match item {
-            Some(HandledNodesEvent::TaskClosed { id, result }) => {
+            HandledNodesEvent::TaskClosed { id, result } => {
                 match (self.tasks.remove(&id), result) {
                     (Some(TaskState::Pending), Err(err)) => {
-                        Async::Ready(Some(CollectionEvent::ReachError {
+                        Async::Ready(CollectionEvent::ReachError {
                             id: ReachAttemptId(id),
                             error: err,
-                        }))
+                        })
                     },
                     (Some(TaskState::Pending), Ok(())) => {
                         // TODO: this variant shouldn't happen ; prove this
-                        Async::Ready(Some(CollectionEvent::ReachError {
+                        Async::Ready(CollectionEvent::ReachError {
                             id: ReachAttemptId(id),
                             error: IoError::new(IoErrorKind::Other, "couldn't reach the node"),
-                        }))
+                        })
                     },
                     (Some(TaskState::Connected(peer_id)), Ok(())) => {
                         let _node_task_id = self.nodes.remove(&peer_id);
                         debug_assert_eq!(_node_task_id, Some(id));
-                        Async::Ready(Some(CollectionEvent::NodeClosed {
+                        Async::Ready(CollectionEvent::NodeClosed {
                             peer_id,
-                        }))
+                        })
                     },
                     (Some(TaskState::Connected(peer_id)), Err(err)) => {
                         let _node_task_id = self.nodes.remove(&peer_id);
                         debug_assert_eq!(_node_task_id, Some(id));
-                        Async::Ready(Some(CollectionEvent::NodeError {
+                        Async::Ready(CollectionEvent::NodeError {
                             peer_id,
                             error: err,
-                        }))
+                        })
                     },
                     (None, _) => {
                         panic!("self.tasks is always kept in sync with the tasks in self.inner ; \
@@ -406,14 +406,14 @@ impl<TInEvent, TOutEvent> CollectionStream<TInEvent, TOutEvent> {
                     },
                 }
             },
-            Some(HandledNodesEvent::NodeReached { id, peer_id }) => {
-                Async::Ready(Some(CollectionEvent::NodeReached(CollectionReachEvent {
+            HandledNodesEvent::NodeReached { id, peer_id } => {
+                Async::Ready(CollectionEvent::NodeReached(CollectionReachEvent {
                     parent: self,
                     id,
                     peer_id,
-                })))
+                }))
             },
-            Some(HandledNodesEvent::NodeEvent { id, event }) => {
+            HandledNodesEvent::NodeEvent { id, event } => {
                 let peer_id = match self.tasks.get(&id) {
                     Some(TaskState::Connected(peer_id)) => peer_id.clone(),
                     _ => panic!("we can only receive NodeEvent events from a task after we \
@@ -422,12 +422,11 @@ impl<TInEvent, TOutEvent> CollectionStream<TInEvent, TOutEvent> {
                                  self.tasks is switched to the Connected state ; qed"),
                 };
 
-                Async::Ready(Some(CollectionEvent::NodeEvent {
+                Async::Ready(CollectionEvent::NodeEvent {
                     peer_id,
                     event,
-                }))
+                })
             }
-            None => Async::Ready(None),
         }
     }
 }
