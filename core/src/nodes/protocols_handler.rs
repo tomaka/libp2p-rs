@@ -29,7 +29,32 @@ use upgrade::{DeniedConnectionUpgrade, toggleable::Toggleable};
 use void::Void;
 use {ConnectionUpgrade, Endpoint};
 
-/// Handler for a protocol.
+/// Handler for a set of protocols for a specific connection with a remote.
+///
+/// This trait should be implemented on struct that hold the state for a specific protocol
+/// behaviour with a specific remote.
+///
+/// Implementors should keep in mind that the connection can be closed at any time. When a
+/// connection is closed (either by us or by the remote) `shutdown()` is called and the handler
+/// continues to be processed until it produces `None`. Then only the handler is destroyed.
+/// This makes it possible for the handler to finish delivering events even after knowing that it
+/// is shutting down.
+/// Implementors should keep in mind that when `shutdown()` is called, the connection might already
+/// be closed or unresponsive. They should therefore not rely on being able to deliver messages.
+///
+/// # Handling a protocol
+///
+/// Protocols with the remote can be opened in two different ways:
+///
+/// - Dialing, which is a voluntary process. In order to do so, make `poll()` return a
+///   `OutboundSubstreamRequest` variant containing the connection upgrade to use.
+/// - Listening, which is used to determine which protocols are supported when the remote wants
+///   to open a substream. Implementing `listen_protocol` should return the upgrade supported when
+///   listening.
+///
+/// The upgrade when dialing and the upgrade when listening have to be of the same type, but you
+/// are free to return for example an `OrUpgrade` enum containing the one you want.
+///
 // TODO: add upgrade timeout system
 // TODO: add a "blocks connection closing" system, so that we can gracefully close a connection
 //       when it's no longer needed, and so that for example the periodic pinging system does not
@@ -72,6 +97,7 @@ pub trait ProtocolsHandler {
 
     /// Should behave like `Stream::poll()`. Should close if no more event can be produced and the
     /// node should be closed.
+    // TODO: should not return a `NodeHandlerEvent` but a different enum
     fn poll(&mut self) -> Poll<Option<NodeHandlerEvent<(Self::Protocol, Self::OutboundOpenInfo), Self::OutEvent>>, IoError>;
 
     /// Adds a closure that turns the output event into something else.

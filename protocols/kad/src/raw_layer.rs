@@ -57,7 +57,6 @@ impl<TInner, TUserData> KademliaRawBehaviour<TInner, TUserData> {
 
 impl<TTrans, TUserData> KademliaRawBehaviour<TTrans, TUserData> {
     /// Responds to a `FIND_NODE` request.
-    // TODO: preserve order of answers
     pub fn respond_find_node<TPeers>(&mut self, id: KademliaRequestId, closer_peers: TPeers)
         where TPeers: IntoIterator<Item = KadPeer>
     {

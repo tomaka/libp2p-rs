@@ -74,6 +74,8 @@ where TTrans: Transport<Output = (PeerId, TMuxer)> + Clone,
     }
 
     fn poll(&mut self) -> Poll<Option<NetworkBehaviorAction<<Self::ProtocolsHandler as ProtocolsHandler>::InEvent, Self::OutEvent>>, io::Error> {
+        // TODO: merge self.unresponsive and self.ping_time
+
         if let Some(peer_id) = self.unresponsive.pop_front() {
             let event = AutoDcBehaviourEvent::Unresponsive { peer_id };
             return Ok(Async::Ready(Some(NetworkBehaviorAction::GenerateEvent(event.into()))));
@@ -100,6 +102,7 @@ pub enum AutoDcBehaviourEvent {
     },
 
     /// The given node has been determined unresponsive and is shutting down.
+    // TODO: is this a good idea?
     Unresponsive {
         /// Peer that is unresponsive.
         peer_id: PeerId,

@@ -203,12 +203,19 @@ pub trait NetworkBehavior {
 /// Action to perform.
 #[derive(Debug, Clone)]
 pub enum NetworkBehaviorAction<TInEvent, TOutEvent> {
-    /// Generate an outside event.
+    /// Generate an event for the outside.
     GenerateEvent(TOutEvent),
-    /// Instructs the swarm to dial the given multiaddress.
+
+    /// Instructs the swarm to dial the given multiaddress without any expectation of a peer id.
     DialAddress(Multiaddr),
-    /// Instructs the swarm to reach the given peer.
+
+    /// Instructs the swarm to try reach the given peer.
     DialPeer(PeerId),
-    /// Sends an event to a node if we're connected to it.
+
+    /// If we're connected to the given peer, sends a message to the protocol handler.
+    ///
+    /// If we're not connected to this peer, attempts to open a connection to it, then sends the
+    /// message.
+    // TODO: ^ meh ; should somehow ensure delivery or something
     SendEventIfExists(PeerId, TInEvent),
 }
