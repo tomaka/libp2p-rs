@@ -183,7 +183,7 @@ pub trait NetworkBehavior {
     // TODO: should be a different event type
     fn inject_event(
         &mut self,
-        ev: &RawSwarmEvent<Self::Transport, <Self::ProtocolsHandler as ProtocolsHandler>::InEvent, <Self::ProtocolsHandler as ProtocolsHandler>::OutEvent, NodeHandlerWrapper<Self::ProtocolsHandler>>,
+        ev: &SwarmBehaviourEvent<Self::Transport, Self::ProtocolsHandler>,
     );
 
     /// Polls for things that swarm should do.
@@ -192,6 +192,8 @@ pub trait NetworkBehavior {
     // TODO: debate about the `Option`
     fn poll(&mut self) -> Poll<Option<NetworkBehaviorAction<<Self::ProtocolsHandler as ProtocolsHandler>::InEvent, Self::OutEvent>>, io::Error>;
 }
+
+pub type SwarmBehaviourEvent<'a, Transport, Handler> = RawSwarmEvent<'a, Transport, <Handler as ProtocolsHandler>::InEvent, <Handler as ProtocolsHandler>::OutEvent, NodeHandlerWrapper<Handler>>;
 
 /// Action to perform.
 #[derive(Debug, Clone)]

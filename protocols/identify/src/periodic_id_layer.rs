@@ -21,7 +21,7 @@
 use futures::prelude::*;
 use libp2p_core::{Multiaddr, PeerId, Transport, nodes::protocols_handler::ProtocolsHandler};
 use libp2p_core::muxing::StreamMuxer;
-use libp2p_core::nodes::{Substream, RawSwarmEvent, NetworkBehavior, NetworkBehaviorAction};
+use libp2p_core::nodes::{Substream, RawSwarmEvent, SwarmBehaviourEvent, NetworkBehavior, NetworkBehaviorAction};
 use std::collections::VecDeque;
 use std::io;
 use std::marker::PhantomData;
@@ -57,7 +57,7 @@ where TTrans: Transport<Output = (PeerId, TMuxer)> + Clone,
 
     fn inject_event(
         &mut self,
-        event: &RawSwarmEvent<Self::Transport, <Self::ProtocolsHandler as ProtocolsHandler>::OutEvent>,
+        event: &SwarmBehaviourEvent<Self::Transport, Self::ProtocolsHandler>,
     ) {
         match event {
             RawSwarmEvent::NodeEvent { peer_id, event: PeriodicIdentificationEvent::Identified { info, observed_addr } } => {

@@ -32,4 +32,4 @@ pub use self::node::Substream;
 pub use self::handled_node::{NodeHandlerEvent, NodeHandlerEndpoint};
 pub use self::protocols_handler::{NodeHandlerWrapper, ProtocolsHandler, MapOutEvent};
 pub use self::raw_swarm::{ConnectedPoint, Peer, RawSwarm, RawSwarmEvent};
-pub use self::swarm::{NetworkBehavior, NetworkBehaviorAction, Swarm};
+pub use self::swarm::{NetworkBehavior, NetworkBehaviorAction, Swarm, SwarmBehaviourEvent};
