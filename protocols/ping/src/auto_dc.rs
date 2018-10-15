@@ -59,7 +59,7 @@ where TTrans: Transport<Output = (PeerId, TMuxer)> + Clone,
 
     fn inject_event(
         &mut self,
-        event: &RawSwarmEvent<Self::Transport, <Self::ProtocolsHandler as ProtocolsHandler>::OutEvent>,
+        event: &RawSwarmEvent<Self::Transport,  <Self::ProtocolsHandler as ProtocolsHandler>::InEvent, <Self::ProtocolsHandler as ProtocolsHandler>::OutEvent>,
     ) {
         match event {
             RawSwarmEvent::NodeEvent { peer_id, event: OutEvent::Unresponsive } => {

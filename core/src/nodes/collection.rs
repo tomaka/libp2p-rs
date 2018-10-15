@@ -32,9 +32,9 @@ use PeerId;
 // TODO: make generic over PeerId
 
 /// Implementation of `Stream` that handles a collection of nodes.
-pub struct CollectionStream<TInEvent, TOutEvent> {
+pub struct CollectionStream<TInEvent, TOutEvent, THandler> {
     /// Object that handles the tasks.
-    inner: HandledNodesTasks<TInEvent, TOutEvent>,
+    inner: HandledNodesTasks<TInEvent, TOutEvent, THandler>,
     /// List of nodes, with the task id that handles this node. The corresponding entry in `tasks`
     /// must always be in the `Connected` state.
     nodes: FnvHashMap<PeerId, TaskId>,
@@ -43,7 +43,7 @@ pub struct CollectionStream<TInEvent, TOutEvent> {
     tasks: FnvHashMap<TaskId, TaskState>,
 }
 
-impl<TInEvent, TOutEvent> fmt::Debug for CollectionStream<TInEvent, TOutEvent> {
+impl<TInEvent, TOutEvent, THandler> fmt::Debug for CollectionStream<TInEvent, TOutEvent, THandler> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         let mut list = f.debug_list();
         for (id, task) in &self.tasks {
@@ -70,10 +70,10 @@ enum TaskState {
 }
 
 /// Event that can happen on the `CollectionStream`.
-pub enum CollectionEvent<'a, TInEvent:'a , TOutEvent: 'a> {
+pub enum CollectionEvent<'a, TInEvent:'a , TOutEvent: 'a, THandler: 'a> {
     /// A connection to a node has succeeded. You must use the provided event in order to accept
     /// the connection.
-    NodeReached(CollectionReachEvent<'a, TInEvent, TOutEvent>),
+    NodeReached(CollectionReachEvent<'a, TInEvent, TOutEvent, THandler>),
 
     /// A connection to a node has been closed.
     ///
@@ -85,6 +85,8 @@ pub enum CollectionEvent<'a, TInEvent:'a , TOutEvent: 'a> {
     },
 
     /// A connection to a node has errored.
+    ///
+    /// Can only happen after a node has been successfully reached.
     NodeError {
         /// Identifier of the node.
         peer_id: PeerId,
@@ -98,6 +100,8 @@ pub enum CollectionEvent<'a, TInEvent:'a , TOutEvent: 'a> {
         id: ReachAttemptId,
         /// Error that happened on the future.
         error: IoError,
+        /// The handler that was passed to `add_reach_attempt`.
+        handler: THandler,
     },
 
     /// A node has produced an event.
@@ -109,7 +113,7 @@ pub enum CollectionEvent<'a, TInEvent:'a , TOutEvent: 'a> {
     },
 }
 
-impl<'a, TInEvent, TOutEvent> fmt::Debug for CollectionEvent<'a, TInEvent, TOutEvent>
+impl<'a, TInEvent, TOutEvent, THandler> fmt::Debug for CollectionEvent<'a, TInEvent, TOutEvent, THandler>
 where TOutEvent: fmt::Debug
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
@@ -130,7 +134,7 @@ where TOutEvent: fmt::Debug
                 .field("error", error)
                 .finish()
             },
-            CollectionEvent::ReachError { ref id, ref error } => {
+            CollectionEvent::ReachError { ref id, ref error, .. } => {
                 f.debug_struct("CollectionEvent::ReachError")
                 .field("id", id)
                 .field("error", error)
@@ -148,16 +152,16 @@ where TOutEvent: fmt::Debug
 
 /// Event that happens when we reach a node.
 #[must_use = "The node reached event is used to accept the newly-opened connection"]
-pub struct CollectionReachEvent<'a, TInEvent: 'a, TOutEvent: 'a> {
+pub struct CollectionReachEvent<'a, TInEvent: 'a, TOutEvent: 'a, THandler: 'a> {
     /// Peer id we connected to.
     peer_id: PeerId,
     /// The task id that reached the node.
     id: TaskId,
     /// The `CollectionStream` we are referencing.
-    parent: &'a mut CollectionStream<TInEvent, TOutEvent>,
+    parent: &'a mut CollectionStream<TInEvent, TOutEvent, THandler>,
 }
 
-impl<'a, TInEvent, TOutEvent> CollectionReachEvent<'a, TInEvent, TOutEvent> {
+impl<'a, TInEvent, TOutEvent, THandler> CollectionReachEvent<'a, TInEvent, TOutEvent, THandler> {
     /// Returns the peer id the node that has been reached.
     #[inline]
     pub fn peer_id(&self) -> &PeerId {
@@ -220,7 +224,7 @@ impl<'a, TInEvent, TOutEvent> CollectionReachEvent<'a, TInEvent, TOutEvent> {
     }
 }
 
-impl<'a, TInEvent, TOutEvent> fmt::Debug for CollectionReachEvent<'a, TInEvent, TOutEvent> {
+impl<'a, TInEvent, TOutEvent, THandler> fmt::Debug for CollectionReachEvent<'a, TInEvent, TOutEvent, THandler> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         f.debug_struct("CollectionReachEvent")
             .field("peer_id", &self.peer_id)
@@ -229,7 +233,7 @@ impl<'a, TInEvent, TOutEvent> fmt::Debug for CollectionReachEvent<'a, TInEvent, 
     }
 }
 
-impl<'a, TInEvent, TOutEvent> Drop for CollectionReachEvent<'a, TInEvent, TOutEvent> {
+impl<'a, TInEvent, TOutEvent, THandler> Drop for CollectionReachEvent<'a, TInEvent, TOutEvent, THandler> {
     fn drop(&mut self) {
         let task_state = self.parent.tasks.remove(&self.id);
         debug_assert!(if let Some(TaskState::Pending) = task_state { true } else { false });
@@ -255,7 +259,7 @@ pub enum CollectionNodeAccept {
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ReachAttemptId(TaskId);
 
-impl<TInEvent, TOutEvent> CollectionStream<TInEvent, TOutEvent> {
+impl<TInEvent, TOutEvent, THandler> CollectionStream<TInEvent, TOutEvent, THandler> {
     /// Creates a new empty collection.
     #[inline]
     pub fn new() -> Self {
@@ -270,7 +274,7 @@ impl<TInEvent, TOutEvent> CollectionStream<TInEvent, TOutEvent> {
     ///
     /// This method spawns a task dedicated to resolving this future and processing the node's
     /// events.
-    pub fn add_reach_attempt<TFut, TMuxer, THandler>(&mut self, future: TFut, handler: THandler)
+    pub fn add_reach_attempt<TFut, TMuxer>(&mut self, future: TFut, handler: THandler)
         -> ReachAttemptId
     where
         TFut: Future<Item = (PeerId, TMuxer), Error = IoError> + Send + 'static,
@@ -361,36 +365,36 @@ impl<TInEvent, TOutEvent> CollectionStream<TInEvent, TOutEvent> {
     /// > **Note**: we use a regular `poll` method instead of implementing `Stream` in order to
     /// > remove the `Err` variant, but also because we want the `CollectionStream` to stay
     /// > borrowed if necessary.
-    pub fn poll(&mut self) -> Async<CollectionEvent<TInEvent, TOutEvent>> {
+    pub fn poll(&mut self) -> Async<CollectionEvent<TInEvent, TOutEvent, THandler>> {
         let item = match self.inner.poll() {
             Async::Ready(item) => item,
             Async::NotReady => return Async::NotReady,
         };
 
         match item {
-            HandledNodesEvent::TaskClosed { id, result } => {
-                match (self.tasks.remove(&id), result) {
-                    (Some(TaskState::Pending), Err(err)) => {
+            HandledNodesEvent::TaskClosed { id, result, handler } => {
+                match (self.tasks.remove(&id), result, handler) {
+                    (Some(TaskState::Pending), Err(err), Some(handler)) => {
                         Async::Ready(CollectionEvent::ReachError {
                             id: ReachAttemptId(id),
                             error: err,
+                            handler,
                         })
                     },
-                    (Some(TaskState::Pending), Ok(())) => {
+                    (Some(TaskState::Pending), _, _) => {
                         // TODO: this variant shouldn't happen ; prove this
-                        Async::Ready(CollectionEvent::ReachError {
-                            id: ReachAttemptId(id),
-                            error: IoError::new(IoErrorKind::Other, "couldn't reach the node"),
-                        })
+                        panic!()
                     },
-                    (Some(TaskState::Connected(peer_id)), Ok(())) => {
+                    (Some(TaskState::Connected(peer_id)), Ok(()), _handler) => {
+                        debug_assert!(_handler.is_none());
                         let _node_task_id = self.nodes.remove(&peer_id);
                         debug_assert_eq!(_node_task_id, Some(id));
                         Async::Ready(CollectionEvent::NodeClosed {
                             peer_id,
                         })
                     },
-                    (Some(TaskState::Connected(peer_id)), Err(err)) => {
+                    (Some(TaskState::Connected(peer_id)), Err(err), _handler) => {
+                        debug_assert!(_handler.is_none());
                         let _node_task_id = self.nodes.remove(&peer_id);
                         debug_assert_eq!(_node_task_id, Some(id));
                         Async::Ready(CollectionEvent::NodeError {
@@ -398,7 +402,7 @@ impl<TInEvent, TOutEvent> CollectionStream<TInEvent, TOutEvent> {
                             error: err,
                         })
                     },
-                    (None, _) => {
+                    (None, _, _) => {
                         panic!("self.tasks is always kept in sync with the tasks in self.inner ; \
                                 when we add a task in self.inner we add a corresponding entry in \
                                 self.tasks, and remove the entry only when the task is closed ; \

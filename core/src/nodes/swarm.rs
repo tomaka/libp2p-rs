@@ -23,7 +23,7 @@ use muxing::StreamMuxer;
 use nodes::handled_node::NodeHandler;
 use nodes::node::Substream;
 use nodes::protocols_handler::{NodeHandlerWrapper, ProtocolsHandler};
-use nodes::raw_swarm::{RawSwarm, RawSwarmEvent, ConnectedPoint, HandlerFactory};
+use nodes::raw_swarm::{RawSwarm, RawSwarmEvent, ConnectedPoint};
 use std::{io, marker::PhantomData};
 use {ConnectionUpgrade, Multiaddr, PeerId, Transport};
 
@@ -36,21 +36,10 @@ where TBehaviour: NetworkBehavior,
         <TBehaviour as NetworkBehavior>::Transport,
         <<TBehaviour as NetworkBehavior>::ProtocolsHandler as ProtocolsHandler>::InEvent,
         <<TBehaviour as NetworkBehavior>::ProtocolsHandler as ProtocolsHandler>::OutEvent,
-        LocalBuilder<TBehaviour::ProtocolsHandler>,
+        NodeHandlerWrapper<TBehaviour::ProtocolsHandler>,
     >,
 
     behaviour: TBehaviour,
-}
-
-// TODO: remove
-pub struct LocalBuilder<TProtocolsHandler>(PhantomData<TProtocolsHandler>);
-impl<TProtocolsHandler> HandlerFactory for LocalBuilder<TProtocolsHandler>
-where TProtocolsHandler: ProtocolsHandler + Default,
-{
-    type Handler = NodeHandlerWrapper<TProtocolsHandler>;
-    fn new_handler(&self, _: ConnectedPoint) -> Self::Handler {
-        TProtocolsHandler::default().into_node_handler()
-    }
 }
 
 impl<TBehaviour, TMuxer> Swarm<TBehaviour>
@@ -74,7 +63,7 @@ where TBehaviour: NetworkBehavior,
     /// Builds a new `Swarm`.
     #[inline]
     pub fn new(transport: <TBehaviour as NetworkBehavior>::Transport, behaviour: TBehaviour) -> Self {
-        let raw_swarm = RawSwarm::new(transport, LocalBuilder(PhantomData));
+        let raw_swarm = RawSwarm::new(transport);
         Swarm {
             raw_swarm,
             behaviour,
@@ -129,7 +118,8 @@ where TBehaviour: NetworkBehavior,
                     // TODO: if the address is not supported, this should produce an error in the
                     //       stream of events ; alternatively, we could mention that the address
                     //       is ignored if not supported in the docs of DialAddress
-                    let _ = self.raw_swarm.dial(addr);
+                    let handler = ProtocolsHandler::into_node_handler(Default::default());
+                    let _ = self.raw_swarm.dial(addr, handler);
                 },
                 Async::Ready(Some(NetworkBehaviorAction::DialPeer(peer_id))) => {
                     // TODO: how to even do that
@@ -190,9 +180,10 @@ pub trait NetworkBehavior {
     type OutEvent;
 
     /// Indicates to the behaviour that an event happened on the raw swarm.
+    // TODO: should be a different event type
     fn inject_event(
         &mut self,
-        ev: &RawSwarmEvent<Self::Transport, <Self::ProtocolsHandler as ProtocolsHandler>::OutEvent>,
+        ev: &RawSwarmEvent<Self::Transport, <Self::ProtocolsHandler as ProtocolsHandler>::InEvent, <Self::ProtocolsHandler as ProtocolsHandler>::OutEvent, NodeHandlerWrapper<Self::ProtocolsHandler>>,
     );
 
     /// Polls for things that swarm should do.
