@@ -1,0 +1,870 @@
+#![feature(prelude_import)]
+#![no_std]
+#[prelude_import]
+use std::prelude::v1::*;
+#[macro_use]
+extern crate std as std;
+// Copyright 2018 Parity Technologies (UK) Ltd.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom the
+// Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+
+#[macro_use]
+extern crate libp2p;
+
+// TODO: doesn't compile
+/*#[test]
+fn empty() {
+    #[allow(dead_code)]
+    #[derive(ProtocolsHandler)]
+    struct Foo {}
+}*/
+
+extern crate test as test;
+#[cfg(test)]
+#[rustc_test_marker]
+pub const one_field: test::TestDescAndFn = test::TestDescAndFn {
+    desc: test::TestDesc {
+        name: test::StaticTestName("one_field"),
+        ignore: false,
+        allow_fail: false,
+        should_panic: test::ShouldPanic::No,
+    },
+    testfn: test::StaticTestFn(|| test::assert_test_result(one_field())),
+};
+fn one_field() {
+    #[allow(dead_code)]
+    struct Foo<TSubstream> {
+        ping: libp2p::ping::PeriodicPingHandler<TSubstream>,
+    }
+    impl <TSubstream, TSubstream1, TOutEvent>
+     ::libp2p::core::nodes::protocols_handler::ProtocolsHandler for
+     Foo<TSubstream> where
+     libp2p::ping::PeriodicPingHandler<TSubstream>: ::libp2p::core::nodes::protocols_handler::ProtocolsHandler<Substream
+     = TSubstream1, OutEvent = TOutEvent>,
+     <libp2p::ping::PeriodicPingHandler<TSubstream> as
+     ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol: ::libp2p::ConnectionUpgrade<TSubstream1>,
+     <<libp2p::ping::PeriodicPingHandler<TSubstream> as
+      ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol as
+     ::libp2p::ConnectionUpgrade<TSubstream1>>::Future: Send + 'static,
+     <<libp2p::ping::PeriodicPingHandler<TSubstream> as
+      ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol as
+     ::libp2p::ConnectionUpgrade<TSubstream1>>::Output: 'static,
+     <libp2p::ping::PeriodicPingHandler<TSubstream> as
+     ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Substream: ::libp2p::tokio_io::AsyncRead +
+     ::libp2p::tokio_io::AsyncWrite,
+     TSubstream1: ::libp2p::tokio_io::AsyncRead +
+     ::libp2p::tokio_io::AsyncWrite, TOutEvent: 'static {
+        type
+        InEvent
+        =
+        <libp2p::ping::PeriodicPingHandler<TSubstream> as
+        ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::InEvent;
+        type
+        OutEvent
+        =
+        TOutEvent;
+        type
+        Substream
+        =
+        TSubstream1;
+        type
+        Protocol
+        =
+        ::libp2p::core::upgrade::toggleable::Toggleable<::libp2p::core::upgrade::map::Map<<libp2p::ping::PeriodicPingHandler<TSubstream>
+                                                                                          as
+                                                                                          ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol,
+                                                                                          fn(<<libp2p::ping::PeriodicPingHandler<TSubstream>
+                                                                                              as
+                                                                                              ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                             as
+                                                                                             ::libp2p::ConnectionUpgrade<TSubstream1>>::Output)
+                                                                                              ->
+                                                                                                  <<libp2p::ping::PeriodicPingHandler<TSubstream>
+                                                                                                   as
+                                                                                                   ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                                  as
+                                                                                                  ::libp2p::ConnectionUpgrade<TSubstream1>>::Output>>;
+        type
+        OutboundOpenInfo
+        =
+        <libp2p::ping::PeriodicPingHandler<TSubstream> as
+        ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::OutboundOpenInfo;
+        #[inline]
+        fn listen_protocol(&self) -> Self::Protocol {
+            use libp2p::core::upgrade;
+            upgrade::toggleable(upgrade::map::<_,
+                                               fn(_)
+                                                   ->
+                                                       _>(self.ping.listen_protocol(),
+                                                          |p| p))
+        }
+        #[inline]
+        fn inject_fully_negotiated(&mut self,
+                                   protocol:
+                                       <Self::Protocol as
+                                       ::libp2p::ConnectionUpgrade<TSubstream1>>::Output,
+                                   endpoint:
+                                       ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint<Self::OutboundOpenInfo>) {
+            match (protocol, endpoint) {
+                (protocol,
+                 ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Dialer(info))
+                => {
+                    self.ping.inject_fully_negotiated(protocol,
+                                                      ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Dialer(info));
+                }
+                (protocol,
+                 ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Listener)
+                => {
+                    self.ping.inject_fully_negotiated(protocol,
+                                                      ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Listener);
+                }
+                _ =>
+
+                {
+                    ::rt::begin_panic("The passed OutboundOpenInfo don\'t match the expected protocol output",
+                                      &("misc/proto-derive/tests/test.rs",
+                                        35u32, 14u32))
+                }
+            }
+        }
+        #[inline]
+        fn inject_event(&mut self, event: Self::InEvent) {
+            match event { ev => self.ping.inject_event(ev), }
+        }
+        #[inline]
+        fn inject_inbound_closed(&mut self) {
+            self.ping.inject_inbound_closed();
+        }
+        #[inline]
+        fn inject_dial_upgrade_error(&mut self, info: Self::OutboundOpenInfo,
+                                     error: ::std::io::Error) {
+            match info {
+                info => self.ping.inject_dial_upgrade_error(info, error),
+            }
+        }
+        #[inline]
+        fn shutdown(&mut self) { self.ping.shutdown(); }
+        fn poll(&mut self)
+         ->
+             ::libp2p::futures::Poll<Option<::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent<Self::Protocol,
+                                                                                                            Self::OutboundOpenInfo,
+                                                                                                            Self::OutEvent>>,
+                                     ::std::io::Error> {
+            use libp2p::futures::prelude::*;
+            use libp2p::core::upgrade;
+            match self.ping.poll()? {
+                Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::Custom(a)))
+                => {
+                    return Ok(Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::Custom(a))));
+                }
+                Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::OutboundSubstreamRequest {
+                                  upgrade, info })) => {
+                    let upgrade = upgrade;
+                    return Ok(Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::OutboundSubstreamRequest{upgrade,
+                                                                                                                                          info:
+                                                                                                                                              info,})));
+                }
+                Async::Ready(None) => return Ok(Async::Ready(None)),
+                Async::NotReady => (),
+            };
+            Ok(Async::NotReady)
+        }
+    }
+}
+extern crate test as test;
+#[cfg(test)]
+#[rustc_test_marker]
+pub const two_fields: test::TestDescAndFn = test::TestDescAndFn {
+    desc: test::TestDesc {
+        name: test::StaticTestName("two_fields"),
+        ignore: false,
+        allow_fail: false,
+        should_panic: test::ShouldPanic::No,
+    },
+    testfn: test::StaticTestFn(|| test::assert_test_result(two_fields())),
+};
+fn two_fields() {
+    #[allow(dead_code)]
+    struct Foo<TSubstream> {
+        ping_dialer: libp2p::ping::PeriodicPingHandler<TSubstream>,
+        ping_listener: libp2p::ping::PingListenHandler<TSubstream>,
+    }
+    impl <TSubstream, TSubstream1, TOutEvent>
+     ::libp2p::core::nodes::protocols_handler::ProtocolsHandler for
+     Foo<TSubstream> where
+     libp2p::ping::PeriodicPingHandler<TSubstream>: ::libp2p::core::nodes::protocols_handler::ProtocolsHandler<Substream
+     = TSubstream1, OutEvent = TOutEvent>,
+     <libp2p::ping::PeriodicPingHandler<TSubstream> as
+     ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol: ::libp2p::ConnectionUpgrade<TSubstream1>,
+     <<libp2p::ping::PeriodicPingHandler<TSubstream> as
+      ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol as
+     ::libp2p::ConnectionUpgrade<TSubstream1>>::Future: Send + 'static,
+     <<libp2p::ping::PeriodicPingHandler<TSubstream> as
+      ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol as
+     ::libp2p::ConnectionUpgrade<TSubstream1>>::Output: 'static,
+     <libp2p::ping::PeriodicPingHandler<TSubstream> as
+     ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Substream: ::libp2p::tokio_io::AsyncRead +
+     ::libp2p::tokio_io::AsyncWrite,
+     libp2p::ping::PingListenHandler<TSubstream>: ::libp2p::core::nodes::protocols_handler::ProtocolsHandler<Substream
+     = TSubstream1, OutEvent = TOutEvent>,
+     <libp2p::ping::PingListenHandler<TSubstream> as
+     ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol: ::libp2p::ConnectionUpgrade<TSubstream1>,
+     <<libp2p::ping::PingListenHandler<TSubstream> as
+      ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol as
+     ::libp2p::ConnectionUpgrade<TSubstream1>>::Future: Send + 'static,
+     <<libp2p::ping::PingListenHandler<TSubstream> as
+      ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol as
+     ::libp2p::ConnectionUpgrade<TSubstream1>>::Output: 'static,
+     <libp2p::ping::PingListenHandler<TSubstream> as
+     ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Substream: ::libp2p::tokio_io::AsyncRead +
+     ::libp2p::tokio_io::AsyncWrite,
+     TSubstream1: ::libp2p::tokio_io::AsyncRead +
+     ::libp2p::tokio_io::AsyncWrite, TOutEvent: 'static {
+        type
+        InEvent
+        =
+        ::libp2p::core::nodes::protocols_handler::Either<<libp2p::ping::PeriodicPingHandler<TSubstream>
+                                                         as
+                                                         ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::InEvent,
+                                                         <libp2p::ping::PingListenHandler<TSubstream>
+                                                         as
+                                                         ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::InEvent>;
+        type
+        OutEvent
+        =
+        TOutEvent;
+        type
+        Substream
+        =
+        TSubstream1;
+        type
+        Protocol
+        =
+        ::libp2p::core::upgrade::OrUpgrade<::libp2p::core::upgrade::toggleable::Toggleable<::libp2p::core::upgrade::map::Map<<libp2p::ping::PeriodicPingHandler<TSubstream>
+                                                                                                                             as
+                                                                                                                             ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol,
+                                                                                                                             fn(<<libp2p::ping::PeriodicPingHandler<TSubstream>
+                                                                                                                                 as
+                                                                                                                                 ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                                                                as
+                                                                                                                                ::libp2p::ConnectionUpgrade<TSubstream1>>::Output)
+                                                                                                                                 ->
+                                                                                                                                     ::libp2p::core::either::EitherOutput<<<libp2p::ping::PeriodicPingHandler<TSubstream>
+                                                                                                                                                                           as
+                                                                                                                                                                           ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                                                                                                          as
+                                                                                                                                                                          ::libp2p::ConnectionUpgrade<TSubstream1>>::Output,
+                                                                                                                                                                          <<libp2p::ping::PingListenHandler<TSubstream>
+                                                                                                                                                                           as
+                                                                                                                                                                           ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                                                                                                          as
+                                                                                                                                                                          ::libp2p::ConnectionUpgrade<TSubstream1>>::Output>>>,
+                                           ::libp2p::core::upgrade::toggleable::Toggleable<::libp2p::core::upgrade::map::Map<<libp2p::ping::PingListenHandler<TSubstream>
+                                                                                                                             as
+                                                                                                                             ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol,
+                                                                                                                             fn(<<libp2p::ping::PingListenHandler<TSubstream>
+                                                                                                                                 as
+                                                                                                                                 ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                                                                as
+                                                                                                                                ::libp2p::ConnectionUpgrade<TSubstream1>>::Output)
+                                                                                                                                 ->
+                                                                                                                                     ::libp2p::core::either::EitherOutput<<<libp2p::ping::PeriodicPingHandler<TSubstream>
+                                                                                                                                                                           as
+                                                                                                                                                                           ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                                                                                                          as
+                                                                                                                                                                          ::libp2p::ConnectionUpgrade<TSubstream1>>::Output,
+                                                                                                                                                                          <<libp2p::ping::PingListenHandler<TSubstream>
+                                                                                                                                                                           as
+                                                                                                                                                                           ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                                                                                                          as
+                                                                                                                                                                          ::libp2p::ConnectionUpgrade<TSubstream1>>::Output>>>>;
+        type
+        OutboundOpenInfo
+        =
+        ::libp2p::core::nodes::protocols_handler::Either<<libp2p::ping::PeriodicPingHandler<TSubstream>
+                                                         as
+                                                         ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::OutboundOpenInfo,
+                                                         <libp2p::ping::PingListenHandler<TSubstream>
+                                                         as
+                                                         ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::OutboundOpenInfo>;
+        #[inline]
+        fn listen_protocol(&self) -> Self::Protocol {
+            use libp2p::core::upgrade;
+            upgrade::or(upgrade::toggleable(upgrade::map::<_,
+                                                           fn(_)
+                                                               ->
+                                                                   _>(self.ping_dialer.listen_protocol(),
+                                                                      |p|
+                                                                          ::libp2p::core::either::EitherOutput::First(p))),
+                        upgrade::toggleable(upgrade::map::<_,
+                                                           fn(_)
+                                                               ->
+                                                                   _>(self.ping_listener.listen_protocol(),
+                                                                      |p|
+                                                                          ::libp2p::core::either::EitherOutput::Second(p))))
+        }
+        #[inline]
+        fn inject_fully_negotiated(&mut self,
+                                   protocol:
+                                       <Self::Protocol as
+                                       ::libp2p::ConnectionUpgrade<TSubstream1>>::Output,
+                                   endpoint:
+                                       ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint<Self::OutboundOpenInfo>) {
+            match (protocol, endpoint) {
+                (::libp2p::core::either::EitherOutput::First(protocol),
+                 ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Dialer(::libp2p::core::nodes::protocols_handler::Either::First(info)))
+                => {
+                    self.ping_dialer.inject_fully_negotiated(protocol,
+                                                             ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Dialer(info));
+                }
+                (::libp2p::core::either::EitherOutput::First(protocol),
+                 ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Listener)
+                => {
+                    self.ping_dialer.inject_fully_negotiated(protocol,
+                                                             ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Listener);
+                }
+                (::libp2p::core::either::EitherOutput::Second(protocol),
+                 ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Dialer(::libp2p::core::nodes::protocols_handler::Either::Second(info)))
+                => {
+                    self.ping_listener.inject_fully_negotiated(protocol,
+                                                               ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Dialer(info));
+                }
+                (::libp2p::core::either::EitherOutput::Second(protocol),
+                 ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Listener)
+                => {
+                    self.ping_listener.inject_fully_negotiated(protocol,
+                                                               ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Listener);
+                }
+                _ => {
+                    ::rt::begin_panic("The passed OutboundOpenInfo don\'t match the expected protocol output",
+                                      &("misc/proto-derive/tests/test.rs",
+                                        44u32, 14u32))
+                }
+            }
+        }
+        #[inline]
+        fn inject_event(&mut self, event: Self::InEvent) {
+            match event {
+                ::libp2p::core::nodes::protocols_handler::Either::First(ev) =>
+                self.ping_dialer.inject_event(ev),
+                ::libp2p::core::nodes::protocols_handler::Either::Second(ev)
+                => self.ping_listener.inject_event(ev),
+            }
+        }
+        #[inline]
+        fn inject_inbound_closed(&mut self) {
+            self.ping_dialer.inject_inbound_closed();
+            self.ping_listener.inject_inbound_closed();
+        }
+        #[inline]
+        fn inject_dial_upgrade_error(&mut self, info: Self::OutboundOpenInfo,
+                                     error: ::std::io::Error) {
+            match info {
+                ::libp2p::core::nodes::protocols_handler::Either::First(info)
+                => self.ping_dialer.inject_dial_upgrade_error(info, error),
+                ::libp2p::core::nodes::protocols_handler::Either::Second(info)
+                => self.ping_listener.inject_dial_upgrade_error(info, error),
+            }
+        }
+        #[inline]
+        fn shutdown(&mut self) {
+            self.ping_dialer.shutdown();
+            self.ping_listener.shutdown();
+        }
+        fn poll(&mut self)
+         ->
+             ::libp2p::futures::Poll<Option<::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent<Self::Protocol,
+                                                                                                            Self::OutboundOpenInfo,
+                                                                                                            Self::OutEvent>>,
+                                     ::std::io::Error> {
+            use libp2p::futures::prelude::*;
+            use libp2p::core::upgrade;
+            match self.ping_dialer.poll()? {
+                Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::Custom(a)))
+                => {
+                    return Ok(Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::Custom(a))));
+                }
+                Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::OutboundSubstreamRequest {
+                                  upgrade, info })) => {
+                    let upgrade =
+                        upgrade::or(upgrade,
+                                    {
+                                        let mut upgr =
+                                            upgrade::toggleable(upgrade::map::<_,
+                                                                               fn(_)
+                                                                                   ->
+                                                                                       _>(self.ping_listener.listen_protocol(),
+                                                                                          |p|
+                                                                                              ::libp2p::core::either::EitherOutput::Second(p)));
+                                        upgr.disable();
+                                        upgr
+                                    });
+                    return Ok(Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::OutboundSubstreamRequest{upgrade,
+                                                                                                                                          info:
+                                                                                                                                              ::libp2p::core::nodes::protocols_handler::Either::First(info),})));
+                }
+                Async::Ready(None) => return Ok(Async::Ready(None)),
+                Async::NotReady => (),
+            };
+            match self.ping_listener.poll()? {
+                Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::Custom(a)))
+                => {
+                    return Ok(Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::Custom(a))));
+                }
+                Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::OutboundSubstreamRequest {
+                                  upgrade, info })) => {
+                    let upgrade =
+                        upgrade::or({
+                                        let mut upgr =
+                                            upgrade::toggleable(upgrade::map::<_,
+                                                                               fn(_)
+                                                                                   ->
+                                                                                       _>(self.ping_dialer.listen_protocol(),
+                                                                                          |p|
+                                                                                              ::libp2p::core::either::EitherOutput::First(p)));
+                                        upgr.disable();
+                                        upgr
+                                    }, upgrade);
+                    return Ok(Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::OutboundSubstreamRequest{upgrade,
+                                                                                                                                          info:
+                                                                                                                                              ::libp2p::core::nodes::protocols_handler::Either::Second(info),})));
+                }
+                Async::Ready(None) => return Ok(Async::Ready(None)),
+                Async::NotReady => (),
+            };
+            Ok(Async::NotReady)
+        }
+    }
+}
+extern crate test as test;
+#[cfg(test)]
+#[rustc_test_marker]
+pub const three_fields: test::TestDescAndFn = test::TestDescAndFn {
+    desc: test::TestDesc {
+        name: test::StaticTestName("three_fields"),
+        ignore: false,
+        allow_fail: false,
+        should_panic: test::ShouldPanic::No,
+    },
+    testfn: test::StaticTestFn(|| test::assert_test_result(three_fields())),
+};
+fn three_fields() {
+    #[allow(dead_code)]
+    struct Foo<TSubstream> {
+        ping_dialer: libp2p::ping::PeriodicPingHandler<TSubstream>,
+        ping_listener: libp2p::ping::PingListenHandler<TSubstream>,
+        identify: libp2p::identify::PeriodicIdentification<TSubstream>,
+    }
+    impl <TSubstream, TSubstream1, TOutEvent>
+     ::libp2p::core::nodes::protocols_handler::ProtocolsHandler for
+     Foo<TSubstream> where
+     libp2p::ping::PeriodicPingHandler<TSubstream>: ::libp2p::core::nodes::protocols_handler::ProtocolsHandler<Substream
+     = TSubstream1, OutEvent = TOutEvent>,
+     <libp2p::ping::PeriodicPingHandler<TSubstream> as
+     ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol: ::libp2p::ConnectionUpgrade<TSubstream1>,
+     <<libp2p::ping::PeriodicPingHandler<TSubstream> as
+      ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol as
+     ::libp2p::ConnectionUpgrade<TSubstream1>>::Future: Send + 'static,
+     <<libp2p::ping::PeriodicPingHandler<TSubstream> as
+      ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol as
+     ::libp2p::ConnectionUpgrade<TSubstream1>>::Output: 'static,
+     <libp2p::ping::PeriodicPingHandler<TSubstream> as
+     ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Substream: ::libp2p::tokio_io::AsyncRead +
+     ::libp2p::tokio_io::AsyncWrite,
+     libp2p::ping::PingListenHandler<TSubstream>: ::libp2p::core::nodes::protocols_handler::ProtocolsHandler<Substream
+     = TSubstream1, OutEvent = TOutEvent>,
+     <libp2p::ping::PingListenHandler<TSubstream> as
+     ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol: ::libp2p::ConnectionUpgrade<TSubstream1>,
+     <<libp2p::ping::PingListenHandler<TSubstream> as
+      ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol as
+     ::libp2p::ConnectionUpgrade<TSubstream1>>::Future: Send + 'static,
+     <<libp2p::ping::PingListenHandler<TSubstream> as
+      ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol as
+     ::libp2p::ConnectionUpgrade<TSubstream1>>::Output: 'static,
+     <libp2p::ping::PingListenHandler<TSubstream> as
+     ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Substream: ::libp2p::tokio_io::AsyncRead +
+     ::libp2p::tokio_io::AsyncWrite,
+     libp2p::identify::PeriodicIdentification<TSubstream>: ::libp2p::core::nodes::protocols_handler::ProtocolsHandler<Substream
+     = TSubstream1, OutEvent = TOutEvent>,
+     <libp2p::identify::PeriodicIdentification<TSubstream> as
+     ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol: ::libp2p::ConnectionUpgrade<TSubstream1>,
+     <<libp2p::identify::PeriodicIdentification<TSubstream> as
+      ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol as
+     ::libp2p::ConnectionUpgrade<TSubstream1>>::Future: Send + 'static,
+     <<libp2p::identify::PeriodicIdentification<TSubstream> as
+      ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol as
+     ::libp2p::ConnectionUpgrade<TSubstream1>>::Output: 'static,
+     <libp2p::identify::PeriodicIdentification<TSubstream> as
+     ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Substream: ::libp2p::tokio_io::AsyncRead +
+     ::libp2p::tokio_io::AsyncWrite,
+     TSubstream1: ::libp2p::tokio_io::AsyncRead +
+     ::libp2p::tokio_io::AsyncWrite, TOutEvent: 'static {
+        type
+        InEvent
+        =
+        ::libp2p::core::nodes::protocols_handler::Either<::libp2p::core::nodes::protocols_handler::Either<<libp2p::ping::PeriodicPingHandler<TSubstream>
+                                                                                                          as
+                                                                                                          ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::InEvent,
+                                                                                                          <libp2p::ping::PingListenHandler<TSubstream>
+                                                                                                          as
+                                                                                                          ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::InEvent>,
+                                                         <libp2p::identify::PeriodicIdentification<TSubstream>
+                                                         as
+                                                         ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::InEvent>;
+        type
+        OutEvent
+        =
+        TOutEvent;
+        type
+        Substream
+        =
+        TSubstream1;
+        type
+        Protocol
+        =
+        ::libp2p::core::upgrade::OrUpgrade<::libp2p::core::upgrade::OrUpgrade<::libp2p::core::upgrade::toggleable::Toggleable<::libp2p::core::upgrade::map::Map<<libp2p::ping::PeriodicPingHandler<TSubstream>
+                                                                                                                                                                as
+                                                                                                                                                                ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol,
+                                                                                                                                                                fn(<<libp2p::ping::PeriodicPingHandler<TSubstream>
+                                                                                                                                                                    as
+                                                                                                                                                                    ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                                                                                                   as
+                                                                                                                                                                   ::libp2p::ConnectionUpgrade<TSubstream1>>::Output)
+                                                                                                                                                                    ->
+                                                                                                                                                                        ::libp2p::core::either::EitherOutput<::libp2p::core::either::EitherOutput<<<libp2p::ping::PeriodicPingHandler<TSubstream>
+                                                                                                                                                                                                                                                   as
+                                                                                                                                                                                                                                                   ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                                                                                                                                                                                  as
+                                                                                                                                                                                                                                                  ::libp2p::ConnectionUpgrade<TSubstream1>>::Output,
+                                                                                                                                                                                                                                                  <<libp2p::ping::PingListenHandler<TSubstream>
+                                                                                                                                                                                                                                                   as
+                                                                                                                                                                                                                                                   ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                                                                                                                                                                                  as
+                                                                                                                                                                                                                                                  ::libp2p::ConnectionUpgrade<TSubstream1>>::Output>,
+                                                                                                                                                                                                             <<libp2p::identify::PeriodicIdentification<TSubstream>
+                                                                                                                                                                                                              as
+                                                                                                                                                                                                              ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                                                                                                                                             as
+                                                                                                                                                                                                             ::libp2p::ConnectionUpgrade<TSubstream1>>::Output>>>,
+                                                                              ::libp2p::core::upgrade::toggleable::Toggleable<::libp2p::core::upgrade::map::Map<<libp2p::ping::PingListenHandler<TSubstream>
+                                                                                                                                                                as
+                                                                                                                                                                ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol,
+                                                                                                                                                                fn(<<libp2p::ping::PingListenHandler<TSubstream>
+                                                                                                                                                                    as
+                                                                                                                                                                    ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                                                                                                   as
+                                                                                                                                                                   ::libp2p::ConnectionUpgrade<TSubstream1>>::Output)
+                                                                                                                                                                    ->
+                                                                                                                                                                        ::libp2p::core::either::EitherOutput<::libp2p::core::either::EitherOutput<<<libp2p::ping::PeriodicPingHandler<TSubstream>
+                                                                                                                                                                                                                                                   as
+                                                                                                                                                                                                                                                   ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                                                                                                                                                                                  as
+                                                                                                                                                                                                                                                  ::libp2p::ConnectionUpgrade<TSubstream1>>::Output,
+                                                                                                                                                                                                                                                  <<libp2p::ping::PingListenHandler<TSubstream>
+                                                                                                                                                                                                                                                   as
+                                                                                                                                                                                                                                                   ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                                                                                                                                                                                  as
+                                                                                                                                                                                                                                                  ::libp2p::ConnectionUpgrade<TSubstream1>>::Output>,
+                                                                                                                                                                                                             <<libp2p::identify::PeriodicIdentification<TSubstream>
+                                                                                                                                                                                                              as
+                                                                                                                                                                                                              ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                                                                                                                                             as
+                                                                                                                                                                                                             ::libp2p::ConnectionUpgrade<TSubstream1>>::Output>>>>,
+                                           ::libp2p::core::upgrade::toggleable::Toggleable<::libp2p::core::upgrade::map::Map<<libp2p::identify::PeriodicIdentification<TSubstream>
+                                                                                                                             as
+                                                                                                                             ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol,
+                                                                                                                             fn(<<libp2p::identify::PeriodicIdentification<TSubstream>
+                                                                                                                                 as
+                                                                                                                                 ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                                                                as
+                                                                                                                                ::libp2p::ConnectionUpgrade<TSubstream1>>::Output)
+                                                                                                                                 ->
+                                                                                                                                     ::libp2p::core::either::EitherOutput<::libp2p::core::either::EitherOutput<<<libp2p::ping::PeriodicPingHandler<TSubstream>
+                                                                                                                                                                                                                as
+                                                                                                                                                                                                                ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                                                                                                                                               as
+                                                                                                                                                                                                               ::libp2p::ConnectionUpgrade<TSubstream1>>::Output,
+                                                                                                                                                                                                               <<libp2p::ping::PingListenHandler<TSubstream>
+                                                                                                                                                                                                                as
+                                                                                                                                                                                                                ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                                                                                                                                               as
+                                                                                                                                                                                                               ::libp2p::ConnectionUpgrade<TSubstream1>>::Output>,
+                                                                                                                                                                          <<libp2p::identify::PeriodicIdentification<TSubstream>
+                                                                                                                                                                           as
+                                                                                                                                                                           ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::Protocol
+                                                                                                                                                                          as
+                                                                                                                                                                          ::libp2p::ConnectionUpgrade<TSubstream1>>::Output>>>>;
+        type
+        OutboundOpenInfo
+        =
+        ::libp2p::core::nodes::protocols_handler::Either<::libp2p::core::nodes::protocols_handler::Either<<libp2p::ping::PeriodicPingHandler<TSubstream>
+                                                                                                          as
+                                                                                                          ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::OutboundOpenInfo,
+                                                                                                          <libp2p::ping::PingListenHandler<TSubstream>
+                                                                                                          as
+                                                                                                          ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::OutboundOpenInfo>,
+                                                         <libp2p::identify::PeriodicIdentification<TSubstream>
+                                                         as
+                                                         ::libp2p::core::nodes::protocols_handler::ProtocolsHandler>::OutboundOpenInfo>;
+        #[inline]
+        fn listen_protocol(&self) -> Self::Protocol {
+            use libp2p::core::upgrade;
+            upgrade::or(upgrade::or(upgrade::toggleable(upgrade::map::<_,
+                                                                       fn(_)
+                                                                           ->
+                                                                               _>(self.ping_dialer.listen_protocol(),
+                                                                                  |p|
+                                                                                      ::libp2p::core::either::EitherOutput::First(::libp2p::core::either::EitherOutput::First(p)))),
+                                    upgrade::toggleable(upgrade::map::<_,
+                                                                       fn(_)
+                                                                           ->
+                                                                               _>(self.ping_listener.listen_protocol(),
+                                                                                  |p|
+                                                                                      ::libp2p::core::either::EitherOutput::First(::libp2p::core::either::EitherOutput::Second(p))))),
+                        upgrade::toggleable(upgrade::map::<_,
+                                                           fn(_)
+                                                               ->
+                                                                   _>(self.identify.listen_protocol(),
+                                                                      |p|
+                                                                          ::libp2p::core::either::EitherOutput::Second(p))))
+        }
+        #[inline]
+        fn inject_fully_negotiated(&mut self,
+                                   protocol:
+                                       <Self::Protocol as
+                                       ::libp2p::ConnectionUpgrade<TSubstream1>>::Output,
+                                   endpoint:
+                                       ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint<Self::OutboundOpenInfo>) {
+            match (protocol, endpoint) {
+                (::libp2p::core::either::EitherOutput::First(::libp2p::core::either::EitherOutput::First(protocol)),
+                 ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Dialer(::libp2p::core::nodes::protocols_handler::Either::First(::libp2p::core::nodes::protocols_handler::Either::First(info))))
+                => {
+                    self.ping_dialer.inject_fully_negotiated(protocol,
+                                                             ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Dialer(info));
+                }
+                (::libp2p::core::either::EitherOutput::First(::libp2p::core::either::EitherOutput::First(protocol)),
+                 ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Listener)
+                => {
+                    self.ping_dialer.inject_fully_negotiated(protocol,
+                                                             ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Listener);
+                }
+                (::libp2p::core::either::EitherOutput::First(::libp2p::core::either::EitherOutput::Second(protocol)),
+                 ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Dialer(::libp2p::core::nodes::protocols_handler::Either::First(::libp2p::core::nodes::protocols_handler::Either::Second(info))))
+                => {
+                    self.ping_listener.inject_fully_negotiated(protocol,
+                                                               ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Dialer(info));
+                }
+                (::libp2p::core::either::EitherOutput::First(::libp2p::core::either::EitherOutput::Second(protocol)),
+                 ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Listener)
+                => {
+                    self.ping_listener.inject_fully_negotiated(protocol,
+                                                               ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Listener);
+                }
+                (::libp2p::core::either::EitherOutput::Second(protocol),
+                 ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Dialer(::libp2p::core::nodes::protocols_handler::Either::Second(info)))
+                => {
+                    self.identify.inject_fully_negotiated(protocol,
+                                                          ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Dialer(info));
+                }
+                (::libp2p::core::either::EitherOutput::Second(protocol),
+                 ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Listener)
+                => {
+                    self.identify.inject_fully_negotiated(protocol,
+                                                          ::libp2p::core::nodes::handled_node::NodeHandlerEndpoint::Listener);
+                }
+                _ => {
+                    ::rt::begin_panic("The passed OutboundOpenInfo don\'t match the expected protocol output",
+                                      &("misc/proto-derive/tests/test.rs",
+                                        54u32, 14u32))
+                }
+            }
+        }
+        #[inline]
+        fn inject_event(&mut self, event: Self::InEvent) {
+            match event {
+                ::libp2p::core::nodes::protocols_handler::Either::First(::libp2p::core::nodes::protocols_handler::Either::First(ev))
+                => self.ping_dialer.inject_event(ev),
+                ::libp2p::core::nodes::protocols_handler::Either::First(::libp2p::core::nodes::protocols_handler::Either::Second(ev))
+                => self.ping_listener.inject_event(ev),
+                ::libp2p::core::nodes::protocols_handler::Either::Second(ev)
+                => self.identify.inject_event(ev),
+            }
+        }
+        #[inline]
+        fn inject_inbound_closed(&mut self) {
+            self.ping_dialer.inject_inbound_closed();
+            self.ping_listener.inject_inbound_closed();
+            self.identify.inject_inbound_closed();
+        }
+        #[inline]
+        fn inject_dial_upgrade_error(&mut self, info: Self::OutboundOpenInfo,
+                                     error: ::std::io::Error) {
+            match info {
+                ::libp2p::core::nodes::protocols_handler::Either::First(::libp2p::core::nodes::protocols_handler::Either::First(info))
+                => self.ping_dialer.inject_dial_upgrade_error(info, error),
+                ::libp2p::core::nodes::protocols_handler::Either::First(::libp2p::core::nodes::protocols_handler::Either::Second(info))
+                => self.ping_listener.inject_dial_upgrade_error(info, error),
+                ::libp2p::core::nodes::protocols_handler::Either::Second(info)
+                => self.identify.inject_dial_upgrade_error(info, error),
+            }
+        }
+        #[inline]
+        fn shutdown(&mut self) {
+            self.ping_dialer.shutdown();
+            self.ping_listener.shutdown();
+            self.identify.shutdown();
+        }
+        fn poll(&mut self)
+         ->
+             ::libp2p::futures::Poll<Option<::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent<Self::Protocol,
+                                                                                                            Self::OutboundOpenInfo,
+                                                                                                            Self::OutEvent>>,
+                                     ::std::io::Error> {
+            use libp2p::futures::prelude::*;
+            use libp2p::core::upgrade;
+            match self.ping_dialer.poll()? {
+                Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::Custom(a)))
+                => {
+                    return Ok(Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::Custom(a))));
+                }
+                Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::OutboundSubstreamRequest {
+                                  upgrade, info })) => {
+                    let upgrade =
+                        upgrade::or(upgrade::or(upgrade,
+                                                {
+                                                    let mut upgr =
+                                                        upgrade::toggleable(upgrade::map::<_,
+                                                                                           fn(_)
+                                                                                               ->
+                                                                                                   _>(self.ping_listener.listen_protocol(),
+                                                                                                      |p|
+                                                                                                          ::libp2p::core::either::EitherOutput::First(::libp2p::core::either::EitherOutput::Second(p))));
+                                                    upgr.disable();
+                                                    upgr
+                                                }),
+                                    {
+                                        let mut upgr =
+                                            upgrade::toggleable(upgrade::map::<_,
+                                                                               fn(_)
+                                                                                   ->
+                                                                                       _>(self.identify.listen_protocol(),
+                                                                                          |p|
+                                                                                              ::libp2p::core::either::EitherOutput::Second(p)));
+                                        upgr.disable();
+                                        upgr
+                                    });
+                    return Ok(Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::OutboundSubstreamRequest{upgrade,
+                                                                                                                                          info:
+                                                                                                                                              ::libp2p::core::nodes::protocols_handler::Either::First(::libp2p::core::nodes::protocols_handler::Either::First(info)),})));
+                }
+                Async::Ready(None) => return Ok(Async::Ready(None)),
+                Async::NotReady => (),
+            };
+            match self.ping_listener.poll()? {
+                Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::Custom(a)))
+                => {
+                    return Ok(Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::Custom(a))));
+                }
+                Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::OutboundSubstreamRequest {
+                                  upgrade, info })) => {
+                    let upgrade =
+                        upgrade::or(upgrade::or({
+                                                    let mut upgr =
+                                                        upgrade::toggleable(upgrade::map::<_,
+                                                                                           fn(_)
+                                                                                               ->
+                                                                                                   _>(self.ping_dialer.listen_protocol(),
+                                                                                                      |p|
+                                                                                                          ::libp2p::core::either::EitherOutput::First(::libp2p::core::either::EitherOutput::First(p))));
+                                                    upgr.disable();
+                                                    upgr
+                                                }, upgrade),
+                                    {
+                                        let mut upgr =
+                                            upgrade::toggleable(upgrade::map::<_,
+                                                                               fn(_)
+                                                                                   ->
+                                                                                       _>(self.identify.listen_protocol(),
+                                                                                          |p|
+                                                                                              ::libp2p::core::either::EitherOutput::Second(p)));
+                                        upgr.disable();
+                                        upgr
+                                    });
+                    return Ok(Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::OutboundSubstreamRequest{upgrade,
+                                                                                                                                          info:
+                                                                                                                                              ::libp2p::core::nodes::protocols_handler::Either::First(::libp2p::core::nodes::protocols_handler::Either::Second(info)),})));
+                }
+                Async::Ready(None) => return Ok(Async::Ready(None)),
+                Async::NotReady => (),
+            };
+            match self.identify.poll()? {
+                Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::Custom(a)))
+                => {
+                    return Ok(Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::Custom(a))));
+                }
+                Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::OutboundSubstreamRequest {
+                                  upgrade, info })) => {
+                    let upgrade =
+                        upgrade::or(upgrade::or({
+                                                    let mut upgr =
+                                                        upgrade::toggleable(upgrade::map::<_,
+                                                                                           fn(_)
+                                                                                               ->
+                                                                                                   _>(self.ping_dialer.listen_protocol(),
+                                                                                                      |p|
+                                                                                                          ::libp2p::core::either::EitherOutput::First(::libp2p::core::either::EitherOutput::First(p))));
+                                                    upgr.disable();
+                                                    upgr
+                                                },
+                                                {
+                                                    let mut upgr =
+                                                        upgrade::toggleable(upgrade::map::<_,
+                                                                                           fn(_)
+                                                                                               ->
+                                                                                                   _>(self.ping_listener.listen_protocol(),
+                                                                                                      |p|
+                                                                                                          ::libp2p::core::either::EitherOutput::First(::libp2p::core::either::EitherOutput::Second(p))));
+                                                    upgr.disable();
+                                                    upgr
+                                                }), upgrade);
+                    return Ok(Async::Ready(Some(::libp2p::core::nodes::protocols_handler::ProtocolsHandlerEvent::OutboundSubstreamRequest{upgrade,
+                                                                                                                                          info:
+                                                                                                                                              ::libp2p::core::nodes::protocols_handler::Either::Second(info),})));
+                }
+                Async::Ready(None) => return Ok(Async::Ready(None)),
+                Async::NotReady => (),
+            };
+            Ok(Async::NotReady)
+        }
+    }
+}
+pub mod __test_reexports {
+    pub use super::one_field;
+    pub use super::three_fields;
+    pub use super::two_fields;
+}
+#[main]
+pub fn main() -> () {
+    extern crate test as test;
+    test::test_main_static(&[
+        &__test_reexports::one_field,
+        &__test_reexports::two_fields,
+        &__test_reexports::three_fields,
+    ])
+}

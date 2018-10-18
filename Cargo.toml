@@ -19,6 +19,7 @@ libp2p-identify = { path = "./protocols/identify" }
 libp2p-kad = { path = "./protocols/kad" }
 libp2p-floodsub = { path = "./protocols/floodsub" }
 libp2p-peerstore = { path = "./stores/peerstore" }
+libp2p-proto-derive = { path = "./misc/proto-derive" }
 libp2p-ping = { path = "./protocols/ping" }
 libp2p-ratelimit = { path = "./transports/ratelimit" }
 libp2p-relay = { path = "./transports/relay" }
@@ -56,6 +57,7 @@ members = [
     "misc/multihash",
     "misc/multistream-select",
     "misc/peer-id-generator",
+    "misc/proto-derive",
     "misc/rw-stream-sink",
     "transports/dns",
     "protocols/floodsub",
