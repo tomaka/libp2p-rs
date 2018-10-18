@@ -680,3 +680,10 @@ where
         Ok(Async::NotReady)
     }
 }
+
+/// Basic enum, offering two choices. Used when automatically deriving protocols handler.
+// TODO: move somewhere else?
+pub enum Either<A, B> {
+    First(A),
+    Second(B),
+}
