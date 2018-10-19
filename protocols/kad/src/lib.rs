@@ -66,7 +66,6 @@ extern crate futures;
 extern crate libp2p_identify;
 extern crate libp2p_ping;
 extern crate libp2p_core;
-#[macro_use]
 extern crate log;
 extern crate multiaddr;
 extern crate multihash;
@@ -78,13 +77,12 @@ extern crate tokio_codec;
 extern crate tokio_io;
 extern crate tokio_timer;
 extern crate unsigned_varint;
+extern crate void;
 
-pub use self::high_level::{KadSystemConfig, KadSystem, KadQueryEvent};
-pub use self::kad_server::{KadConnecController, KadConnecConfig, KadIncomingRequest, KadFindNodeRespond};
+pub use self::handler::{KademliaHandler, KademliaHandlerEvent};
 pub use self::protocol::{KadConnectionType, KadPeer};
 
-mod high_level;
-mod kad_server;
+mod handler;
 mod kbucket;
 mod protobuf_structs;
 mod protocol;
