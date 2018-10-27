@@ -442,7 +442,7 @@ fn proto_to_msg(mut message: protobuf_structs::dht::Message, origin: Endpoint)
 #[cfg(test)]
 mod tests {
     extern crate libp2p_tcp_transport;
-    extern crate tokio_current_thread;
+    extern crate tokio;
 
     use self::libp2p_tcp_transport::TcpConfig;
     use futures::{Future, Sink, Stream};
@@ -451,6 +451,8 @@ mod tests {
     use protocol::{KadConnectionType, KadMsg, KademliaProtocolConfig, KadPeer};
     use std::sync::mpsc;
     use std::thread;
+    use self::tokio::runtime::current_thread::Runtime;
+
 
     #[test]
     #[ignore]       // TODO: not true anymore, as messages are now asynchronous
@@ -528,8 +530,8 @@ mod tests {
                         assert_eq!(recv_msg.unwrap(), msg_server);
                         ()
                     });
-
-                let _ = tokio_current_thread::block_on_all(future).unwrap();
+                let mut rt = Runtime::new().unwrap();
+                let _ = rt.block_on(future).unwrap();
             });
 
             let transport = TcpConfig::new().with_upgrade(KademliaProtocolConfig);
@@ -539,8 +541,8 @@ mod tests {
                 .unwrap_or_else(|_| panic!())
                 .and_then(|proto| proto.send(msg_client))
                 .map(|_| ());
-
-            let _ = tokio_current_thread::block_on_all(future).unwrap();
+            let mut rt = Runtime::new().unwrap();
+            let _ = rt.block_on(future).unwrap();
             bg_thread.join().unwrap();
         }
     }
