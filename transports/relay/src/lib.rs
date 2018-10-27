@@ -21,7 +21,6 @@
 extern crate bytes;
 #[macro_use]
 extern crate futures;
-extern crate libp2p_peerstore as peerstore;
 extern crate libp2p_core as core;
 #[macro_use]
 extern crate log;
@@ -31,12 +30,15 @@ extern crate rand;
 extern crate tokio_codec;
 extern crate tokio_io;
 extern crate unsigned_varint;
+extern crate void;
 
 mod copy;
+mod handler;
 mod message;
 mod protocol;
 mod transport;
 mod utility;
 
-pub use protocol::{Output, RelayConfig};
+pub use handler::{RelayHandler, RelayHandlerEvent};
+pub use protocol::{RelayOutput, RelayConfig};
 pub use transport::RelayTransport;

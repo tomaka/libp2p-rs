@@ -20,36 +20,48 @@
 
 use bytes::Bytes;
 use copy;
-use core::{ConnectionUpgrade, Endpoint, Transport};
+use core::{ConnectionUpgrade, Endpoint, PeerId, Transport};
 use futures::{stream, future::{self, Either::{A, B}, FutureResult}, prelude::*};
 use message::{CircuitRelay, CircuitRelay_Peer, CircuitRelay_Status, CircuitRelay_Type};
-use peerstore::{PeerAccess, PeerId, Peerstore};
-use std::{io, iter, ops::Deref};
+use std::{io, iter};
 use tokio_io::{AsyncRead, AsyncWrite};
 use utility::{io_err, is_success, status, Io, Peer};
 
+/// Configuration for a connection upgrade that handles the relay protocol.
 #[derive(Debug, Clone)]
-pub struct RelayConfig<T, P> {
+pub struct RelayConfig<T> {
+    /// Peer id of the local node.
     my_id: PeerId,
+    /// When asked to relay a connection, the transport to use to reach the requested node.
     transport: T,
-    peers: P,
-    // If `allow_relays` is false this node can only be used as a
-    // destination but will not allow relaying streams to other
-    // destinations.
+    /// If `allow_relays` is false this node can only be used as a destination but will not allow
+    /// relaying streams to other destinations.
     allow_relays: bool
 }
 
-// The `RelayConfig` upgrade can serve as destination or relay. Each mode needs a different
-// output type. As destination we want the stream to continue to be usable, whereas as relay
-// we pipe data from source to destination and do not want to use the stream in any other way.
-// Therefore, in the latter case we simply return a future that can be driven to completion
-// but otherwise the stream is not programmatically accessible.
-pub enum Output<C> {
-    Stream(C),
-    Sealed(Box<Future<Item=(), Error=io::Error> + Send>)
+/// The `RelayConfig` upgrade can serve as destination or relay. Each mode needs a different
+/// output type. As destination we want the stream to continue to be usable, whereas as relay
+/// we pipe data from source to destination and do not want to use the stream in any other way.
+/// Therefore, in the latter case we simply return a future that can be driven to completion
+/// but otherwise the stream is not programmatically accessible.
+pub enum RelayOutput<TStream> {
+    /// The source is a relay `R` that relays the communication from someone `S` to us. Keep in
+    /// mind that the multiaddress you have about this communication is the address of `R`.
+    Stream {
+        /// Stream of data to the original source.
+        stream: TStream,
+        /// Identifier of the original source `S`.
+        src_peer_id: PeerId,
+        // TODO: also provide the addresses ; however the semantics of these addresses is uncertain
+    },
+
+    /// We have been asked to relay communications to another node. Polling the future until it's
+    /// ready will process the proxying.
+    // TODO: provide more info for informative purposes for the user
+    Sealed(Box<Future<Item=(), Error=io::Error> + Send>),
 }
 
-impl<C, T, P, S> ConnectionUpgrade<C> for RelayConfig<T, P>
+impl<C, T> ConnectionUpgrade<C> for RelayConfig<T>
 where
     C: AsyncRead + AsyncWrite + Send + 'static,
     T: Transport + Clone + Send + 'static,
@@ -57,9 +69,6 @@ where
     T::Listener: Send,
     T::ListenerUpgrade: Send,
     T::Output: AsyncRead + AsyncWrite + Send,
-    P: Deref<Target=S> + Clone + Send + 'static,
-    S: 'static,
-    for<'a> &'a S: Peerstore
 {
     type NamesIter = iter::Once<(Bytes, Self::UpgradeIdentifier)>;
     type UpgradeIdentifier = ();
@@ -68,7 +77,7 @@ where
         iter::once((Bytes::from("/libp2p/relay/circuit/0.1.0"), ()))
     }
 
-    type Output = Output<C>;
+    type Output = RelayOutput<C>;
     type Future = Box<Future<Item=Self::Output, Error=io::Error> + Send>;
 
     fn upgrade(self, conn: C, _: (), _: Endpoint) -> Self::Future {
@@ -80,10 +89,10 @@ where
             };
             match msg.get_field_type() {
                 CircuitRelay_Type::HOP if self.allow_relays => { // act as relay
-                    B(A(self.on_hop(msg, io).map(|fut| Output::Sealed(Box::new(fut)))))
+                    B(A(self.on_hop(msg, io).map(|fut| RelayOutput::Sealed(Box::new(fut)))))
                 }
                 CircuitRelay_Type::STOP => { // act as destination
-                    B(B(self.on_stop(msg, io).map(Output::Stream)))
+                    B(B(self.on_stop(msg, io)))
                 }
                 other => {
                     debug!("invalid message type: {:?}", other);
@@ -96,25 +105,25 @@ where
     }
 }
 
-impl<T, P, S> RelayConfig<T, P>
+impl<T> RelayConfig<T>
 where
     T: Transport + Clone + 'static,
     T::Dial: Send,      // TODO: remove
     T::Listener: Send,      // TODO: remove
     T::ListenerUpgrade: Send,      // TODO: remove
     T::Output: Send + AsyncRead + AsyncWrite,
-    P: Deref<Target = S> + Clone + 'static,
-    for<'a> &'a S: Peerstore,
 {
-    pub fn new(my_id: PeerId, transport: T, peers: P) -> RelayConfig<T, P> {
-        RelayConfig { my_id, transport, peers, allow_relays: true }
+    /// Builds a new `RelayConfig` with default options.
+    pub fn new(my_id: PeerId, transport: T) -> RelayConfig<T> {
+        RelayConfig { my_id, transport, allow_relays: true }
     }
 
+    /// Sets whether we will allow requests for relaying connections.
     pub fn allow_relays(&mut self, val: bool) {
         self.allow_relays = val
     }
 
-    // HOP message handling (relay mode).
+    /// HOP message handling (request to act as a relay).
     fn on_hop<C>(self, mut msg: CircuitRelay, io: Io<C>) -> impl Future<Item=impl Future<Item=(), Error=io::Error>, Error=io::Error>
     where
         C: AsyncRead + AsyncWrite + 'static,
@@ -126,19 +135,12 @@ where
             return A(io.send(msg).and_then(|_| Err(io_err("invalid src address"))))
         };
 
-        let mut dest = if let Some(peer) = Peer::from_message(msg.take_dstPeer()) {
+        let dest = if let Some(peer) = Peer::from_message(msg.take_dstPeer()) {
             peer
         } else {
             let msg = status(CircuitRelay_Status::HOP_DST_MULTIADDR_INVALID);
             return B(A(io.send(msg).and_then(|_| Err(io_err("invalid dest address")))))
         };
-
-        if dest.addrs.is_empty() {
-            // Add locally know addresses of destination
-            if let Some(peer) = self.peers.peer(&dest.id) {
-                dest.addrs.extend(peer.addrs())
-            }
-        }
 
         let stop = stop_message(&from, &dest);
 
@@ -202,16 +204,23 @@ where
         B(B(future))
     }
 
-    // STOP message handling (destination mode)
-    fn on_stop<C>(self, mut msg: CircuitRelay, io: Io<C>) -> impl Future<Item=C, Error=io::Error>
+    /// STOP message handling (we are a destination)
+    fn on_stop<C>(self, mut msg: CircuitRelay, io: Io<C>) -> impl Future<Item = RelayOutput<C>, Error = io::Error>
     where
         C: AsyncRead + AsyncWrite + 'static,
     {
+        let from = if let Some(peer) = Peer::from_message(msg.take_srcPeer()) {
+            peer
+        } else {
+            let msg = status(CircuitRelay_Status::HOP_SRC_MULTIADDR_INVALID);
+            return A(A(io.send(msg).and_then(|_| Err(io_err("invalid src address")))))
+        };
+
         let dest = if let Some(peer) = Peer::from_message(msg.take_dstPeer()) {
             peer
         } else {
             let msg = status(CircuitRelay_Status::STOP_DST_MULTIADDR_INVALID);
-            return A(io.send(msg).and_then(|_| Err(io_err("invalid dest address"))))
+            return A(B(io.send(msg).and_then(|_| Err(io_err("invalid dest address")))))
         };
 
         if dest.id != self.my_id {
@@ -219,7 +228,12 @@ where
             return B(A(io.send(msg).and_then(|_| Err(io_err("destination id mismatch")))))
         }
 
-        B(B(io.send(status(CircuitRelay_Status::SUCCESS)).map(Io::into)))
+        B(B(io.send(status(CircuitRelay_Status::SUCCESS)).map(move |stream| {
+            RelayOutput::Stream {
+                stream: stream.into(),
+                src_peer_id: from.id,
+            }
+        })))
     }
 }
 
@@ -244,6 +258,7 @@ fn stop_message(from: &Peer, dest: &Peer) -> CircuitRelay {
     msg
 }
 
+/// Dummy connection upgrade that negotiates the relay protocol and returns the socket.
 #[derive(Debug, Clone)]
 struct TrivialUpgrade;
 
@@ -266,6 +281,8 @@ where
     }
 }
 
+/// Connection upgrade that negotiates the relay protocol, then negotiates with the target for it
+/// to act as destination.
 #[derive(Debug, Clone)]
 pub(crate) struct Source(pub(crate) CircuitRelay);
 
