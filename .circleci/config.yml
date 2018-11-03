@@ -28,7 +28,7 @@ jobs:
             EOF
             sudo service docker restart
       - restore_cache:
-          key: test-cache
+          key: v1-test-cache
       - run:
           name: Prepare docker container for building
           command: docker build --pull --no-cache -t rust-libp2p -f .circleci/images/rust-libp2p/Dockerfile .
