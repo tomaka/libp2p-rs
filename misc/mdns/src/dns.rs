@@ -18,17 +18,20 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+//! Contains methods that handle the DNS encoding and decoding capabilities not available in the
+//! `dns_parser` library.
+
 use data_encoding;
 use libp2p_core::{Multiaddr, PeerId};
 use rand;
-use std::{cmp, error, fmt, str, time::Duration};
+use std::{borrow::Cow, cmp, error, fmt, str, time::Duration};
 use {META_QUERY_SERVICE, SERVICE_NAME};
 
 /// Decodes a `<character-string>` (as defined by RFC1035) into a `Vec` of ASCII characters.
 // TODO: better error type?
-pub fn decode_character_string(mut from: &[u8]) -> Result<Vec<u8>, ()> {
+pub fn decode_character_string(mut from: &[u8]) -> Result<Cow<[u8]>, ()> {
     if from.is_empty() {
-        return Ok(Vec::new());
+        return Ok(Cow::Owned(Vec::new()));
     }
 
     // Remove the initial and trailing " if any.
@@ -41,7 +44,7 @@ pub fn decode_character_string(mut from: &[u8]) -> Result<Vec<u8>, ()> {
     }
 
     // TODO: remove the backslashes if any
-    Ok(from.to_vec())
+    Ok(Cow::Borrowed(from))
 }
 
 /// Builds the binary representation of a DNS query to send on the network.
@@ -67,8 +70,8 @@ pub fn build_query() -> Vec<u8> {
     append_qname(&mut out, SERVICE_NAME);
 
     // Flags.
-    append_u16(&mut out, 0xc);
-    append_u16(&mut out, 0x1);
+    append_u16(&mut out, 0x0c);
+    append_u16(&mut out, 0x01);
 
     // Since the output is constant, we reserve the right amount ahead of time.
     // If this assert fails, adjust the capacity of `out` in the source code.
@@ -108,10 +111,8 @@ pub fn build_query_response(
     append_qname(&mut out, SERVICE_NAME);
 
     // Flags.
-    out.push(0x00);
-    out.push(0x0c);
-    out.push(0x80);
-    out.push(0x01);
+    append_u16(&mut out, 0x000c);
+    append_u16(&mut out, 0x8001);
 
     // TTL for the answer
     append_u32(&mut out, ttl);
@@ -138,6 +139,7 @@ pub fn build_query_response(
         append_txt_record(&mut out, &peer_id_bytes, ttl, Some(&txt_to_send_bytes[..]))?;
     }
 
+    // The DNS specs specify that the maximum allowed size is 9000 bytes.
     if out.len() > 9000 {
         return Err(MdnsResponseError::ResponseTooLong);
     }
@@ -167,10 +169,8 @@ pub fn build_service_discovery_response(id: u16, ttl: Duration) -> Vec<u8> {
     append_qname(&mut out, META_QUERY_SERVICE);
 
     // Flags.
-    out.push(0x00);
-    out.push(0x0c);
-    out.push(0x80);
-    out.push(0x01);
+    append_u16(&mut out, 0x000c);
+    append_u16(&mut out, 0x8001);
 
     // TTL for the answer
     append_u32(&mut out, ttl);
@@ -277,7 +277,7 @@ fn append_txt_record<'a>(
 
     // Flags.
     out.push(0x00);
-    out.push(0x10);
+    out.push(0x10);     // TXT record.
     out.push(0x80);
     out.push(0x01);
 
