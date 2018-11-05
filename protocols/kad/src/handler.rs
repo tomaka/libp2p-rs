@@ -309,7 +309,7 @@ where TSubstream: AsyncRead + AsyncWrite + 'static,
     }
 
     #[inline]
-    fn inject_event(&mut self, message: &KademliaHandlerIn<TUserData>) {
+    fn inject_event(&mut self, message: KademliaHandlerIn<TUserData>) {
         match message {
             KademliaHandlerIn::FindNodeReq { key, user_data } => {
                 let msg = KadMsg::FindNodeReq { key: key.clone() };
