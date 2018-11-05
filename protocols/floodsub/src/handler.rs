@@ -133,8 +133,8 @@ where
     }
 
     #[inline]
-    fn inject_event(&mut self, message: &FloodsubRpc) {
-        self.send_queue.push(message.clone());
+    fn inject_event(&mut self, message: FloodsubRpc) {
+        self.send_queue.push(message);
     }
 
     #[inline]
