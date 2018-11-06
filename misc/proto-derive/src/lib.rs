@@ -30,7 +30,7 @@ use self::proc_macro::TokenStream;
 use syn::{DeriveInput, Data, DataStruct, Ident};
 
 /// The interface that satisfies Rust.
-#[proc_macro_derive(ProtocolsHandler)]
+#[proc_macro_derive(ProtocolsHandler, attributes(protocols))]
 pub fn hello_macro_derive(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
     build(&ast)
@@ -67,14 +67,34 @@ fn build_struct(ast: &DeriveInput, data_struct: &DataStruct) -> TokenStream {
     };
 
     // Name of the type parameter that represents the output event.
-    let out_event_generic = {
+    let (out_event_generic, out_event_generic_exists) = {
         let mut n = "TOutEvent".to_string();
         // Avoid collisions.
         while ast.generics.type_params().any(|tp| tp.ident.to_string() == n) {
             n.push('1');
         }
-        let n = Ident::new(&n, name.span());
-        quote!{#n}
+
+        let mut n = syn::Type::Path(syn::TypePath { path: From::from(Ident::new(&n, name.span())), qself: None });
+        let mut exists = false;
+
+        for meta_items in ast.attrs.iter().filter_map(get_meta_items) {
+            for meta_item in meta_items {
+                match meta_item {
+                    // Parse `#[protocols(output = "Foo")]`
+                    syn::NestedMeta::Meta(syn::Meta::NameValue(ref m)) if m.ident == "output" => {
+                        if let syn::Lit::Str(ref s) = m.lit {
+                            let tokens = syn::parse_str(&s.value()).unwrap();
+                            // TODO: respan the tokens
+                            n = syn::parse2(tokens).unwrap();
+                            exists = true;
+                        }
+                    }
+                    _ => ()
+                }
+            }
+        }
+
+        (quote!{#n}, exists)
     };
 
     // Build the generics.
@@ -82,21 +102,31 @@ fn build_struct(ast: &DeriveInput, data_struct: &DataStruct) -> TokenStream {
         let tp = ast.generics.type_params();
         let lf = ast.generics.lifetimes();
         let cst = ast.generics.const_params();
-        quote!{<#(#lf,)* #(#tp,)* #(#cst,)* #substream_generic, #out_event_generic>}
+        if !out_event_generic_exists {
+            quote!{<#(#lf,)* #(#tp,)* #(#cst,)* #substream_generic, #out_event_generic>}
+        } else {
+            quote!{<#(#lf,)* #(#tp,)* #(#cst,)* #substream_generic>}
+        }
     };
 
     // Build the `where ...` clause of the trait implementation.
     let where_clause = {
         let mut additional = data_struct.fields.iter().flat_map(|field| {
             let ty = &field.ty;
-            vec![
-                quote!{#ty: #trait_to_impl<Substream = #substream_generic, OutEvent = #out_event_generic>},
+            let mut list = vec![
                 // TODO: are these required?
                 quote!{<#ty as #trait_to_impl>::Protocol: ::libp2p::ConnectionUpgrade<#substream_generic>},
                 quote!{<<#ty as #trait_to_impl>::Protocol as ::libp2p::ConnectionUpgrade<#substream_generic>>::Future: Send + 'static},
                 quote!{<<#ty as #trait_to_impl>::Protocol as ::libp2p::ConnectionUpgrade<#substream_generic>>::Output: 'static},
                 quote!{<#ty as #trait_to_impl>::Substream: ::libp2p::tokio_io::AsyncRead + ::libp2p::tokio_io::AsyncWrite},
-            ]
+            ];
+            if out_event_generic_exists {
+                list.push(quote!{#ty: #trait_to_impl<Substream = #substream_generic>});
+                list.push(quote!{#out_event_generic: From<<#ty as #trait_to_impl>::OutEvent>});
+            } else {
+                list.push(quote!{#ty: #trait_to_impl<Substream = #substream_generic, OutEvent = #out_event_generic>});
+            };
+            list
         }).collect::<Vec<_>>();
 
         additional.push(quote!{
@@ -356,7 +386,7 @@ fn build_struct(ast: &DeriveInput, data_struct: &DataStruct) -> TokenStream {
                         upgr
                     }}
                 } else {
-                    quote!{upgrade}
+                    quote!{upgrade::toggleable(upgrade::map::<_, fn(_) -> _>(upgrade, |p| #wrapped_out))}
                 };
 
                 match out_proto_build {
@@ -371,7 +401,7 @@ fn build_struct(ast: &DeriveInput, data_struct: &DataStruct) -> TokenStream {
         quote!{
             match #field_name.poll()? {
                 Async::Ready(Some(#proto_handler_event::Custom(a))) => {
-                    return Ok(Async::Ready(Some(#proto_handler_event::Custom(a))));
+                    return Ok(Async::Ready(Some(#proto_handler_event::Custom(From::from(a)))));
                 },
                 Async::Ready(Some(#proto_handler_event::OutboundSubstreamRequest { upgrade, info })) => {
                     let upgrade = #proto_build;
@@ -445,4 +475,19 @@ fn build_struct(ast: &DeriveInput, data_struct: &DataStruct) -> TokenStream {
     };
 
     final_quote.into()
+}
+
+fn get_meta_items(attr: &syn::Attribute) -> Option<Vec<syn::NestedMeta>> {
+    // TODO: blindly copy-pasted from serde
+    if attr.path.segments.len() == 1 && attr.path.segments[0].ident == "protocols" {
+        match attr.interpret_meta() {
+            Some(syn::Meta::List(ref meta)) => Some(meta.nested.iter().cloned().collect()),
+            _ => {
+                // TODO: produce an error
+                None
+            }
+        }
+    } else {
+        None
+    }
 }
