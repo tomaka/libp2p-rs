@@ -130,6 +130,8 @@ mod tests;
 
 pub mod protocol;
 
-pub use self::dialer_select::{dialer_select_proto, DialerSelectFuture, DialerSelectSeq, DialerSelectPar};
+pub use self::dialer_select::{
+    dialer_select_proto, DialerSelectFuture, DialerSelectPar, DialerSelectSeq,
+};
 pub use self::error::ProtocolChoiceError;
 pub use self::listener_select::{listener_select_proto, ListenerSelectFuture};

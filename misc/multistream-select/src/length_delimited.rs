@@ -20,7 +20,11 @@
 
 use futures::{Async, Poll, Sink, StartSend, Stream};
 use smallvec::SmallVec;
-use std::{io::{Error as IoError, ErrorKind as IoErrorKind}, marker::PhantomData, u16};
+use std::{
+    io::{Error as IoError, ErrorKind as IoErrorKind},
+    marker::PhantomData,
+    u16,
+};
 use tokio_codec::FramedWrite;
 use tokio_io::{AsyncRead, AsyncWrite};
 use unsigned_varint::codec::UviBytes;
@@ -54,7 +58,7 @@ enum State {
 
 impl<I, S> LengthDelimited<I, S>
 where
-    S: AsyncWrite
+    S: AsyncWrite,
 {
     pub fn new(inner: S) -> LengthDelimited<I, S> {
         let mut encoder = UviBytes::default();
@@ -107,7 +111,8 @@ where
 
             match self.state {
                 State::ReadingLength => {
-                    match self.inner
+                    match self
+                        .inner
                         .get_mut()
                         .read(&mut self.internal_buffer[self.internal_buffer_pos..])
                     {
@@ -165,7 +170,8 @@ where
                 }
 
                 State::ReadingData { frame_len } => {
-                    match self.inner
+                    match self
+                        .inner
                         .get_mut()
                         .read(&mut self.internal_buffer[self.internal_buffer_pos..])
                     {
@@ -198,7 +204,7 @@ where
 
 impl<I, S> Sink for LengthDelimited<I, S>
 where
-    S: AsyncWrite
+    S: AsyncWrite,
 {
     type SinkItem = <FramedWrite<S, UviBytes> as Sink>::SinkItem;
     type SinkError = <FramedWrite<S, UviBytes> as Sink>::SinkError;
@@ -348,4 +354,3 @@ mod tests {
         }
     }
 }
-

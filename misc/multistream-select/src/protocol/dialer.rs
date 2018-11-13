@@ -30,7 +30,6 @@ use protocol::MULTISTREAM_PROTOCOL_WITH_LF;
 use tokio_io::{AsyncRead, AsyncWrite};
 use unsigned_varint::decode;
 
-
 /// Wraps around a `AsyncRead+AsyncWrite`. Assumes that we're on the dialer's side. Produces and
 /// accepts messages.
 pub struct Dialer<R> {
@@ -47,7 +46,7 @@ where
     pub fn new(inner: R) -> DialerFuture<R> {
         let sender = LengthDelimited::new(inner);
         DialerFuture {
-            inner: sender.send(Bytes::from(MULTISTREAM_PROTOCOL_WITH_LF))
+            inner: sender.send(Bytes::from(MULTISTREAM_PROTOCOL_WITH_LF)),
         }
     }
 
@@ -145,17 +144,20 @@ where
             } else {
                 // A varint number of protocols
                 let (num_protocols, mut remaining) = decode::usize(&frame)?;
-                if num_protocols > 1000 { // TODO: configurable limit
-                    return Err(MultistreamSelectError::VarintParseError("too many protocols".into()))
+                if num_protocols > 1000 {
+                    // TODO: configurable limit
+                    return Err(MultistreamSelectError::VarintParseError(
+                        "too many protocols".into(),
+                    ));
                 }
                 let mut out = Vec::with_capacity(num_protocols);
-                for _ in 0 .. num_protocols {
+                for _ in 0..num_protocols {
                     let (len, rem) = decode::usize(remaining)?;
                     if len == 0 || len > rem.len() || rem[len - 1] != b'\n' {
-                        return Err(MultistreamSelectError::UnknownMessage)
+                        return Err(MultistreamSelectError::UnknownMessage);
                     }
-                    out.push(Bytes::from(&rem[.. len - 1]));
-                    remaining = &rem[len ..]
+                    out.push(Bytes::from(&rem[..len - 1]));
+                    remaining = &rem[len..]
                 }
                 return Ok(Async::Ready(Some(
                     ListenerToDialerMessage::ProtocolsListResponse { list: out },
@@ -167,7 +169,7 @@ where
 
 /// Future, returned by `Dialer::new`, which send the handshake and returns the actual `Dialer`.
 pub struct DialerFuture<T: AsyncWrite> {
-    inner: sink::Send<LengthDelimited<Bytes, T>>
+    inner: sink::Send<LengthDelimited<Bytes, T>>,
 }
 
 impl<T: AsyncWrite> Future for DialerFuture<T> {
@@ -176,10 +178,12 @@ impl<T: AsyncWrite> Future for DialerFuture<T> {
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
-        Ok(Async::Ready(Dialer { inner, handshake_finished: false }))
+        Ok(Async::Ready(Dialer {
+            inner,
+            handshake_finished: false,
+        }))
     }
 }
-
 
 #[cfg(test)]
 mod tests {

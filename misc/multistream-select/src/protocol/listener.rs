@@ -21,7 +21,7 @@
 //! Contains the `Listener` wrapper, which allows raw communications with a dialer.
 
 use bytes::Bytes;
-use futures::{Async, AsyncSink, prelude::*, sink, stream::StreamFuture};
+use futures::{prelude::*, sink, stream::StreamFuture, Async, AsyncSink};
 use length_delimited::LengthDelimited;
 use protocol::DialerToListenerMessage;
 use protocol::ListenerToDialerMessage;
@@ -31,11 +31,10 @@ use std::mem;
 use tokio_io::{AsyncRead, AsyncWrite};
 use unsigned_varint::encode;
 
-
 /// Wraps around a `AsyncRead+AsyncWrite`. Assumes that we're on the listener's side. Produces and
 /// accepts messages.
 pub struct Listener<R> {
-    inner: LengthDelimited<Bytes, R>
+    inner: LengthDelimited<Bytes, R>,
 }
 
 impl<R> Listener<R>
@@ -47,7 +46,9 @@ where
     pub fn new(inner: R) -> ListenerFuture<R> {
         let inner = LengthDelimited::new(inner);
         ListenerFuture {
-            inner: ListenerFutureState::Await { inner: inner.into_future() }
+            inner: ListenerFutureState::Await {
+                inner: inner.into_future(),
+            },
         }
     }
 
@@ -164,21 +165,20 @@ where
     }
 }
 
-
 /// Future, returned by `Listener::new` which performs the handshake and returns
 /// the `Listener` if successful.
 pub struct ListenerFuture<T: AsyncRead + AsyncWrite> {
-    inner: ListenerFutureState<T>
+    inner: ListenerFutureState<T>,
 }
 
 enum ListenerFutureState<T: AsyncRead + AsyncWrite> {
     Await {
-        inner: StreamFuture<LengthDelimited<Bytes, T>>
+        inner: StreamFuture<LengthDelimited<Bytes, T>>,
     },
     Reply {
-        sender: sink::Send<LengthDelimited<Bytes, T>>
+        sender: sink::Send<LengthDelimited<Bytes, T>>,
     },
-    Undefined
+    Undefined,
 }
 
 impl<T: AsyncRead + AsyncWrite> Future for ListenerFuture<T> {
@@ -189,18 +189,17 @@ impl<T: AsyncRead + AsyncWrite> Future for ListenerFuture<T> {
         loop {
             match mem::replace(&mut self.inner, ListenerFutureState::Undefined) {
                 ListenerFutureState::Await { mut inner } => {
-                    let (msg, socket) =
-                        match inner.poll() {
-                            Ok(Async::Ready(x)) => x,
-                            Ok(Async::NotReady) => {
-                                self.inner = ListenerFutureState::Await { inner };
-                                return Ok(Async::NotReady)
-                            }
-                            Err((e, _)) => return Err(MultistreamSelectError::from(e))
-                        };
+                    let (msg, socket) = match inner.poll() {
+                        Ok(Async::Ready(x)) => x,
+                        Ok(Async::NotReady) => {
+                            self.inner = ListenerFutureState::Await { inner };
+                            return Ok(Async::NotReady);
+                        }
+                        Err((e, _)) => return Err(MultistreamSelectError::from(e)),
+                    };
                     if msg.as_ref().map(|b| &b[..]) != Some(MULTISTREAM_PROTOCOL_WITH_LF) {
                         debug!("failed handshake; received: {:?}", msg);
-                        return Err(MultistreamSelectError::FailedHandshake)
+                        return Err(MultistreamSelectError::FailedHandshake);
                     }
                     trace!("sending back /multistream/<version> to finish the handshake");
                     let sender = socket.send(Bytes::from(MULTISTREAM_PROTOCOL_WITH_LF));
@@ -211,17 +210,18 @@ impl<T: AsyncRead + AsyncWrite> Future for ListenerFuture<T> {
                         Async::Ready(x) => x,
                         Async::NotReady => {
                             self.inner = ListenerFutureState::Reply { sender };
-                            return Ok(Async::NotReady)
+                            return Ok(Async::NotReady);
                         }
                     };
-                    return Ok(Async::Ready(Listener { inner: listener }))
+                    return Ok(Async::Ready(Listener { inner: listener }));
                 }
-                ListenerFutureState::Undefined => panic!("ListenerFutureState::poll called after completion")
+                ListenerFutureState::Undefined => {
+                    panic!("ListenerFutureState::poll called after completion")
+                }
             }
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

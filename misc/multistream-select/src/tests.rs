@@ -88,7 +88,8 @@ fn select_proto_basic() {
             let protos = vec![
                 (Bytes::from("/proto1"), <Bytes as PartialEq>::eq, 0),
                 (Bytes::from("/proto2"), <Bytes as PartialEq>::eq, 1),
-            ].into_iter();
+            ]
+            .into_iter();
             listener_select_proto(connec, protos).map(|r| r.0)
         });
 
@@ -98,12 +99,12 @@ fn select_proto_basic() {
             let protos = vec![
                 (Bytes::from("/proto3"), <Bytes as PartialEq>::eq, 2),
                 (Bytes::from("/proto2"), <Bytes as PartialEq>::eq, 3),
-            ].into_iter();
+            ]
+            .into_iter();
             dialer_select_proto(connec, protos).map(|r| r.0)
         });
     let mut rt = Runtime::new().unwrap();
-    let (dialer_chosen, listener_chosen) =
-        rt.block_on(client.join(server)).unwrap();
+    let (dialer_chosen, listener_chosen) = rt.block_on(client.join(server)).unwrap();
     assert_eq!(dialer_chosen, 3);
     assert_eq!(listener_chosen, 1);
 }
@@ -122,7 +123,8 @@ fn no_protocol_found() {
             let protos = vec![
                 (Bytes::from("/proto1"), <Bytes as PartialEq>::eq, 1),
                 (Bytes::from("/proto2"), <Bytes as PartialEq>::eq, 2),
-            ].into_iter();
+            ]
+            .into_iter();
             listener_select_proto(connec, protos).map(|r| r.0)
         });
 
@@ -132,7 +134,8 @@ fn no_protocol_found() {
             let protos = vec![
                 (Bytes::from("/proto3"), <Bytes as PartialEq>::eq, 3),
                 (Bytes::from("/proto4"), <Bytes as PartialEq>::eq, 4),
-            ].into_iter();
+            ]
+            .into_iter();
             dialer_select_proto(connec, protos).map(|r| r.0)
         });
     let mut rt = Runtime::new().unwrap();
@@ -156,7 +159,8 @@ fn select_proto_parallel() {
             let protos = vec![
                 (Bytes::from("/proto1"), <Bytes as PartialEq>::eq, 0),
                 (Bytes::from("/proto2"), <Bytes as PartialEq>::eq, 1),
-            ].into_iter();
+            ]
+            .into_iter();
             listener_select_proto(connec, protos).map(|r| r.0)
         });
 
@@ -166,13 +170,13 @@ fn select_proto_parallel() {
             let protos = vec![
                 (Bytes::from("/proto3"), <Bytes as PartialEq>::eq, 2),
                 (Bytes::from("/proto2"), <Bytes as PartialEq>::eq, 3),
-            ].into_iter();
+            ]
+            .into_iter();
             dialer_select_proto_parallel(connec, protos).map(|r| r.0)
         });
 
     let mut rt = Runtime::new().unwrap();
-    let (dialer_chosen, listener_chosen) =
-        rt.block_on(client.join(server)).unwrap();
+    let (dialer_chosen, listener_chosen) = rt.block_on(client.join(server)).unwrap();
     assert_eq!(dialer_chosen, 3);
     assert_eq!(listener_chosen, 1);
 }
@@ -191,7 +195,8 @@ fn select_proto_serial() {
             let protos = vec![
                 (Bytes::from("/proto1"), <Bytes as PartialEq>::eq, 0),
                 (Bytes::from("/proto2"), <Bytes as PartialEq>::eq, 1),
-            ].into_iter();
+            ]
+            .into_iter();
             listener_select_proto(connec, protos).map(|r| r.0)
         });
 
@@ -203,8 +208,7 @@ fn select_proto_serial() {
         });
 
     let mut rt = Runtime::new().unwrap();
-    let (dialer_chosen, listener_chosen) =
-        rt.block_on(client.join(server)).unwrap();
+    let (dialer_chosen, listener_chosen) = rt.block_on(client.join(server)).unwrap();
     assert_eq!(dialer_chosen, 3);
     assert_eq!(listener_chosen, 1);
 }
