@@ -3,6 +3,11 @@ name = "multistream-select"
 version = "0.1.0"
 authors = ["Parity Technologies <admin@parity.io>"]
 license = "MIT"
+description = "Implementation of libp2p's multistream-select protocol"
+documentation = "https://docs.rs/multistream-select"
+repository = "https://github.com/libp2p/rust-libp2p"
+keywords = ["libp2p", "peer-to-peer", "tokio"]
+categories = ["network-programming"]
 
 [dependencies]
 bytes = "0.4"
