@@ -81,15 +81,18 @@ fn connect_and_send_hello(bench: &mut test::Bencher) {
 
 #[bench]
 fn connect_and_send_one_kb(bench: &mut test::Bencher) {
-    connect_and_send_data(bench, &[0; 1024])
+    let data = (0 .. 1024).map(|_| rand::random::<u8>()).collect::<Vec<_>>();
+    connect_and_send_data(bench, &data)
 }
 
 #[bench]
 fn connect_and_send_one_mb(bench: &mut test::Bencher) {
-    connect_and_send_data(bench, &[0; 1024 * 1024])
+    let data = (0 .. 1024 * 1024).map(|_| rand::random::<u8>()).collect::<Vec<_>>();
+    connect_and_send_data(bench, &data)
 }
 
 #[bench]
 fn connect_and_send_two_mb(bench: &mut test::Bencher) {
-    connect_and_send_data(bench, &[0; 2 * 1024 * 1024])
+    let data = (0 .. 2 * 1024 * 1024).map(|_| rand::random::<u8>()).collect::<Vec<_>>();
+    connect_and_send_data(bench, &data)
 }
