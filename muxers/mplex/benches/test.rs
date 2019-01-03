@@ -23,7 +23,7 @@ extern crate test;
 
 use futures::prelude::*;
 use libp2p_core::{muxing, Transport};
-use std::sync::Arc;
+use std::{io, sync::Arc};
 use tokio::{
     codec::length_delimited::Builder,
     runtime::current_thread::Runtime
@@ -44,7 +44,7 @@ fn connect_and_send_data(bench: &mut test::Bencher, data: &[u8]) {
             .map_err(|(err, _)| err)
             .and_then(|(client, _)| client.unwrap().0)
             .and_then(|client| muxing::outbound_from_ref_and_wrap(Arc::new(client)))
-            .map(|client| Builder::new().new_read(client.unwrap()))
+            .map(|client| Builder::new().new_read(io::BufReader::new(client.unwrap())))
             .and_then(|client| {
                 client
                     .into_future()
@@ -62,7 +62,7 @@ fn connect_and_send_data(bench: &mut test::Bencher, data: &[u8]) {
             .dial(addr)
             .unwrap()
             .and_then(|client| muxing::inbound_from_ref_and_wrap(Arc::new(client)))
-            .map(|server| Builder::new().new_write(server.unwrap()))
+            .map(|server| Builder::new().new_write(io::BufWriter::new(server.unwrap())))
             .and_then(|server| server.send(data.into()))
             .map(|_| ());
 
