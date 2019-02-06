@@ -261,10 +261,7 @@ where TBehaviour: NetworkBehaviour,
                 Async::Ready(RawSwarmEvent::Connected { peer_id, endpoint }) => {
                     self.behaviour.inject_connected(peer_id, endpoint);
                 },
-                Async::Ready(RawSwarmEvent::NodeClosed { peer_id, endpoint }) => {
-                    self.behaviour.inject_disconnected(&peer_id, endpoint);
-                },
-                Async::Ready(RawSwarmEvent::NodeError { peer_id, endpoint, .. }) => {
+                Async::Ready(RawSwarmEvent::NodeClosed { peer_id, endpoint, result }) => {
                     self.behaviour.inject_disconnected(&peer_id, endpoint);
                 },
                 Async::Ready(RawSwarmEvent::Replaced { peer_id, closed_endpoint, endpoint }) => {

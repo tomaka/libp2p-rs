@@ -22,7 +22,7 @@ use crate::{
     PeerId,
     muxing::StreamMuxer,
     nodes::{
-        handled_node::{HandledNode, HandledNodeError, NodeHandler},
+        handled_node::{GracefulClose, HandledNode, HandledNodeOutEvent, HandledNodeError, NodeHandler},
         node::Substream
     }
 };
@@ -154,7 +154,7 @@ pub enum HandledNodesEvent<TOutEvent, TIntoHandler, TReachErr, THandlerErr, TPee
         /// Identifier of the task that closed.
         id: TaskId,
         /// What happened.
-        result: Result<(), TaskClosedEvent<TReachErr, THandlerErr>>,
+        result: Result<GracefulClose, TaskClosedEvent<TReachErr, THandlerErr>>,
         /// If the task closed before reaching the node, this contains the handler that was passed
         /// to `add_reach_attempt`.
         handler: Option<TIntoHandler>,
@@ -371,7 +371,7 @@ enum InToExtMessage<TOutEvent, TIntoHandler, TReachErr, THandlerErr, TPeerId> {
     /// A connection to a node has succeeded.
     NodeReached(TPeerId),
     /// The task closed.
-    TaskClosed(Result<(), TaskClosedEvent<TReachErr, THandlerErr>>, Option<TIntoHandler>),
+    TaskClosed(Result<GracefulClose, TaskClosedEvent<TReachErr, THandlerErr>>, Option<TIntoHandler>),
     /// An event from the node.
     NodeEvent(TOutEvent),
 }
@@ -497,17 +497,20 @@ where
                                 self.inner = NodeTaskInner::Node(node);
                                 return Ok(Async::NotReady);
                             },
-                            Ok(Async::Ready(Some(event))) => {
+                            Ok(Async::Ready(Some(HandledNodeOutEvent::HandlerEvent(event)))) => {
                                 let event = InToExtMessage::NodeEvent(event);
                                 if self.events_tx.unbounded_send((event, self.id)).is_err() {
                                     node.shutdown();
                                 }
                             }
-                            Ok(Async::Ready(None)) => {
-                                let event = InToExtMessage::TaskClosed(Ok(()), None);
+                            Ok(Async::Ready(Some(HandledNodeOutEvent::Close(reason)))) => {
+                                let event = InToExtMessage::TaskClosed(Ok(reason), None);
                                 let _ = self.events_tx.unbounded_send((event, self.id));
                                 return Ok(Async::Ready(())); // End the task.
                             }
+                            Ok(Async::Ready(None)) => {
+                                panic!("Handled node guarantees that it never returns None")
+                            },
                             Err(err) => {
                                 let event = InToExtMessage::TaskClosed(Err(TaskClosedEvent::Node(err)), None);
                                 let _ = self.events_tx.unbounded_send((event, self.id));

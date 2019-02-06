@@ -69,13 +69,13 @@ pub type Substream<TMuxer> = muxing::SubstreamRef<Arc<TMuxer>>;
 // Track state of stream muxer per direction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum StreamState {
-    // direction is open
+    /// Direction is open. This is the normal operation state.
     Open,
-    // direction is shutting down
+    /// Direction is currently shutting down.
     Shutdown,
-    // direction has shutdown and is flushing
+    /// Direction has finishing shutting down and is flushing.
     Flush,
-    // direction is closed
+    /// Direction is entirely closed.
     Closed
 }
 
@@ -126,6 +126,13 @@ where
             outbound_state: StreamState::Open,
             outbound_substreams: SmallVec::new(),
         }
+    }
+
+    /// Returns true if the node is closed, and has returned `Ready(None)` in the past.
+    pub fn is_finished(&self) -> bool {
+        self.outbound_state == StreamState::Closed &&
+            self.inbound_state == StreamState::Closed &&
+            self.outbound_substreams.is_empty()
     }
 
     /// Starts the process of opening a new outbound substream.

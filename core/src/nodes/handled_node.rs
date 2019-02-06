@@ -20,7 +20,7 @@
 
 use crate::muxing::StreamMuxer;
 use crate::nodes::node::{NodeEvent, NodeStream, Substream};
-use futures::{prelude::*, stream::Fuse};
+use futures::prelude::*;
 use std::{error, fmt, io};
 
 mod tests;
@@ -109,13 +109,13 @@ impl<TOutboundOpenInfo> NodeHandlerEndpoint<TOutboundOpenInfo> {
 }
 
 /// Event produced by a handler.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeHandlerEvent<TOutboundOpenInfo, TCustom> {
     /// Require a new outbound substream to be opened with the remote.
     OutboundSubstreamRequest(TOutboundOpenInfo),
 
     /// Gracefully shut down the connection to the node.
-    Shutdown,
+    Shutdown(GracefulClose),
 
     /// Other event.
     Custom(TCustom),
@@ -132,7 +132,7 @@ impl<TOutboundOpenInfo, TCustom> NodeHandlerEvent<TOutboundOpenInfo, TCustom> {
             NodeHandlerEvent::OutboundSubstreamRequest(val) => {
                 NodeHandlerEvent::OutboundSubstreamRequest(map(val))
             },
-            NodeHandlerEvent::Shutdown => NodeHandlerEvent::Shutdown,
+            NodeHandlerEvent::Shutdown(reason) => NodeHandlerEvent::Shutdown(reason),
             NodeHandlerEvent::Custom(val) => NodeHandlerEvent::Custom(val),
         }
     }
@@ -146,7 +146,7 @@ impl<TOutboundOpenInfo, TCustom> NodeHandlerEvent<TOutboundOpenInfo, TCustom> {
             NodeHandlerEvent::OutboundSubstreamRequest(val) => {
                 NodeHandlerEvent::OutboundSubstreamRequest(val)
             },
-            NodeHandlerEvent::Shutdown => NodeHandlerEvent::Shutdown,
+            NodeHandlerEvent::Shutdown(reason) => NodeHandlerEvent::Shutdown(reason),
             NodeHandlerEvent::Custom(val) => NodeHandlerEvent::Custom(map(val)),
         }
     }
@@ -159,13 +159,39 @@ where
     THandler: NodeHandler<Substream = Substream<TMuxer>>,
 {
     /// Node that handles the muxing.
-    node: Fuse<NodeStream<TMuxer, THandler::OutboundOpenInfo>>,
+    node: NodeStream<TMuxer, THandler::OutboundOpenInfo>,
     /// Handler that processes substreams.
     handler: THandler,
-    /// If true, `handler` has returned `Ready(None)` and therefore shouldn't be polled again.
-    handler_is_done: bool,
-    // True, if the node is shutting down.
-    is_shutting_down: bool
+    /// State of the node.
+    state: ShutdownState,
+}
+
+/// State of the handled node.
+///
+/// In order to not conflict with the state of the node.
+#[derive(Debug)]
+enum ShutdownState {
+    /// Normal state of operation.
+    Normal,
+
+    /// Waiting for both the handler to finish, and maybe the node as well. Contains the original
+    /// reason why we are shutting down.
+    ShuttingDown(GracefulClose),
+
+    /// The handler is finished. If the node is finished, then we are done. Contains the original
+    /// reason why we are shutting down.
+    HandlerFinished(GracefulClose),
+}
+
+impl ShutdownState {
+    /// Returns true for `HandlerFinished`, false otherwise.
+    fn handler_is_done(&self) -> bool {
+        match *self {
+            ShutdownState::Normal => false,
+            ShutdownState::ShuttingDown(_) => false,
+            ShutdownState::HandlerFinished(_) => true,
+        }
+    }
 }
 
 impl<TMuxer, THandler> fmt::Debug for HandledNode<TMuxer, THandler>
@@ -177,8 +203,7 @@ where
         f.debug_struct("HandledNode")
             .field("node", &self.node)
             .field("handler", &self.handler)
-            .field("handler_is_done", &self.handler_is_done)
-            .field("is_shutting_down", &self.is_shutting_down)
+            .field("state", &self.state)
             .finish()
     }
 }
@@ -192,20 +217,19 @@ where
     #[inline]
     pub fn new(muxer: TMuxer, handler: THandler) -> Self {
         HandledNode {
-            node: NodeStream::new(muxer).fuse(),
+            node: NodeStream::new(muxer),
             handler,
-            handler_is_done: false,
-            is_shutting_down: false
+            state: ShutdownState::Normal,
         }
     }
 
     /// Returns a reference to the `NodeHandler`
-    pub fn handler(&self) -> &THandler{
+    pub fn handler(&self) -> &THandler {
         &self.handler
     }
 
     /// Returns a mutable reference to the `NodeHandler`
-    pub fn handler_mut(&mut self) -> &mut THandler{
+    pub fn handler_mut(&mut self) -> &mut THandler {
         &mut self.handler
     }
 
@@ -220,7 +244,7 @@ where
     /// If `true` is returned, more inbound substream will be received.
     #[inline]
     pub fn is_inbound_open(&self) -> bool {
-        self.node.get_ref().is_inbound_open()
+        self.node.is_inbound_open()
     }
 
     /// Returns true if the outbound channel of the muxer is open.
@@ -228,27 +252,55 @@ where
     /// If `true` is returned, more outbound substream will be opened.
     #[inline]
     pub fn is_outbound_open(&self) -> bool {
-        self.node.get_ref().is_outbound_open()
+        self.node.is_outbound_open()
     }
 
-    /// Returns true if the handled node is in the process of shutting down.
+    /// Returns true if the handled node is in the process of shutting down or has finished
+    /// shutting down.
     #[inline]
     pub fn is_shutting_down(&self) -> bool {
-        self.is_shutting_down
+        match self.state {
+            ShutdownState::Normal => false,
+            ShutdownState::ShuttingDown(_) => true,
+            ShutdownState::HandlerFinished(_) => true,
+        }
     }
 
-    /// Indicates to the handled node that it should shut down. After calling this method, the
-    /// `Stream` will end in the not-so-distant future.
+    /// Indicates to the handled node that it must shut down. After calling this method, the
+    /// `Stream` will end in the not-so-distant future with a `Close` event containing the reason
+    /// passed as parameter.
     ///
-    /// After this method returns, `is_shutting_down()` should return true.
-    pub fn shutdown(&mut self) {
-        self.node.get_mut().shutdown_all();
-        for user_data in self.node.get_mut().cancel_outgoing() {
+    /// After this method returns, `is_shutting_down()` will return true.
+    pub fn shutdown(&mut self, reason: GracefulClose) {
+        if let ShutdownState::Normal = self.state {
+            self.state = ShutdownState::ShuttingDown(reason);
+        } else {
+            return;
+        }
+
+        self.node.shutdown_all();
+        for user_data in self.node.cancel_outgoing() {
             self.handler.inject_outbound_closed(user_data);
         }
         self.handler.shutdown();
-        self.is_shutting_down = true;
     }
+}
+
+/// Event emitted when polling the handled node.
+#[derive(Debug)]
+pub enum HandledNodeOutEvent<THandlerEv> {
+    /// Event from the handler.
+    HandlerEvent(THandlerEv),
+    /// The node has been gracefully closed. This is the last event that is emitted by the handler.
+    /// Any attempt to further poll the handled node will lead to a panic.
+    Close(GracefulClose),
+}
+
+/// Reason why the node has been closed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GracefulClose {
+    /// The node is closing because the remote has gracefully closed the connection.
+    RemoteGraceful,
 }
 
 impl<TMuxer, THandler> Stream for HandledNode<TMuxer, THandler>
@@ -256,72 +308,98 @@ where
     TMuxer: StreamMuxer,
     THandler: NodeHandler<Substream = Substream<TMuxer>>,
 {
-    type Item = THandler::OutEvent;
+    type Item = HandledNodeOutEvent<THandler::OutEvent>;
     type Error = HandledNodeError<THandler::Error>;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         loop {
-            if self.node.is_done() && self.handler_is_done {
-                return Ok(Async::Ready(None));
+            if let ShutdownState::HandlerFinished(_) = self.state {
+                if self.node.is_finished() {
+                    panic!("HandledNode::poll() called after it has been finished");
+                }
             }
 
             let mut node_not_ready = false;
-
-            match self.node.poll().map_err(HandledNodeError::Node)? {
-                Async::NotReady => node_not_ready = true,
-                Async::Ready(Some(NodeEvent::InboundSubstream { substream })) => {
-                    self.handler.inject_substream(substream, NodeHandlerEndpoint::Listener)
-                }
-                Async::Ready(Some(NodeEvent::OutboundSubstream { user_data, substream })) => {
-                    let endpoint = NodeHandlerEndpoint::Dialer(user_data);
-                    self.handler.inject_substream(substream, endpoint)
-                }
-                Async::Ready(None) => {
-                    if !self.is_shutting_down {
-                        self.is_shutting_down = true;
-                        self.handler.shutdown()
+            if !self.node.is_finished() {
+                match self.node.poll().map_err(HandledNodeError::Node)? {
+                    Async::NotReady => node_not_ready = true,
+                    Async::Ready(Some(NodeEvent::InboundSubstream { substream })) => {
+                        self.handler.inject_substream(substream, NodeHandlerEndpoint::Listener)
                     }
-                }
-                Async::Ready(Some(NodeEvent::OutboundClosed { user_data })) => {
-                    self.handler.inject_outbound_closed(user_data)
-                }
-                Async::Ready(Some(NodeEvent::InboundClosed)) => {
-                    self.handler.inject_inbound_closed()
-                }
-            }
-
-            match if self.handler_is_done { Async::Ready(NodeHandlerEvent::Shutdown) } else { self.handler.poll().map_err(HandledNodeError::Handler)? } {
-                Async::NotReady => {
-                    if node_not_ready {
-                        break
+                    Async::Ready(Some(NodeEvent::OutboundSubstream { user_data, substream })) => {
+                        let endpoint = NodeHandlerEndpoint::Dialer(user_data);
+                        self.handler.inject_substream(substream, endpoint)
                     }
-                }
-                Async::Ready(NodeHandlerEvent::OutboundSubstreamRequest(user_data)) => {
-                    if self.node.get_ref().is_outbound_open() {
-                        match self.node.get_mut().open_substream(user_data) {
-                            Ok(()) => (),
-                            Err(user_data) => {
-                                self.handler.inject_outbound_closed(user_data)
+                    Async::Ready(None) => {
+                        match self.state {
+                            ShutdownState::Normal => {
+                                self.handler.shutdown();
+                                self.state = ShutdownState::ShuttingDown(GracefulClose::RemoteGraceful);
+                            },
+                            ShutdownState::ShuttingDown(_) => {},
+                            ShutdownState::HandlerFinished(ref cause) => {
+                                return Ok(Async::Ready(Some(HandledNodeOutEvent::Close(cause.clone()))));
                             },
                         }
-                    } else {
-                        self.handler.inject_outbound_closed(user_data);
+                    }
+                    Async::Ready(Some(NodeEvent::OutboundClosed { user_data })) => {
+                        self.handler.inject_outbound_closed(user_data)
+                    }
+                    Async::Ready(Some(NodeEvent::InboundClosed)) => {
+                        self.handler.inject_inbound_closed()
                     }
                 }
-                Async::Ready(NodeHandlerEvent::Custom(event)) => {
-                    return Ok(Async::Ready(Some(event)));
-                }
-                Async::Ready(NodeHandlerEvent::Shutdown) => {
-                    self.handler_is_done = true;
-                    if !self.is_shutting_down {
-                        self.is_shutting_down = true;
-                        self.node.get_mut().cancel_outgoing();
-                        self.node.get_mut().shutdown_all();
+            } else {
+                node_not_ready = true;
+            }
+
+            let mut handler_not_ready = false;
+            if !self.state.handler_is_done() {
+                match self.handler.poll().map_err(HandledNodeError::Handler)? {
+                    Async::NotReady => handler_not_ready = true,
+                    Async::Ready(NodeHandlerEvent::OutboundSubstreamRequest(user_data)) => {
+                        if self.node.is_outbound_open() {
+                            match self.node.open_substream(user_data) {
+                                Ok(()) => (),
+                                Err(user_data) => {
+                                    self.handler.inject_outbound_closed(user_data)
+                                },
+                            }
+                        } else {
+                            self.handler.inject_outbound_closed(user_data);
+                        }
+                    }
+                    Async::Ready(NodeHandlerEvent::Custom(event)) => {
+                        return Ok(Async::Ready(Some(HandledNodeOutEvent::HandlerEvent(event))));
+                    }
+                    Async::Ready(NodeHandlerEvent::Shutdown(reason)) => {
+                        match self.state {
+                            ShutdownState::Normal => {
+                                self.state = ShutdownState::ShuttingDown(reason);
+                                debug_assert!(!self.node.is_finished());
+                                self.node.cancel_outgoing();
+                                self.node.shutdown_all();
+                            },
+                            ShutdownState::ShuttingDown(ref cause) => {
+                                let cause = cause.clone();
+                                self.state = ShutdownState::HandlerFinished(cause.clone());
+                                if self.node.is_finished() {
+                                    return Ok(Async::Ready(Some(HandledNodeOutEvent::Close(cause))));
+                                }
+                            },
+                            ShutdownState::HandlerFinished(_) =>
+                                unreachable!("We have a if for this variant above; QED")
+                        }
                     }
                 }
+            } else {
+                handler_not_ready = true;
+            }
+
+            if node_not_ready && handler_not_ready {
+                return Ok(Async::NotReady);
             }
         }
-        Ok(Async::NotReady)
     }
 }
 

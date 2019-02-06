@@ -20,7 +20,7 @@
 
 use crate::{
     PeerId,
-    nodes::handled_node::{NodeHandler, NodeHandlerEndpoint, NodeHandlerEvent},
+    nodes::handled_node::{GracefulClose, NodeHandler, NodeHandlerEndpoint, NodeHandlerEvent},
     nodes::handled_node_tasks::IntoNodeHandler,
     protocols_handler::{KeepAlive, ProtocolsHandler, IntoProtocolsHandler, ProtocolsHandlerEvent, ProtocolsHandlerUpgrErr},
     upgrade::{
@@ -298,7 +298,7 @@ where
                     ));
                 }
                 Async::Ready(ProtocolsHandlerEvent::Shutdown) => {
-                    return Ok(Async::Ready(NodeHandlerEvent::Shutdown))
+                    return Ok(Async::Ready(NodeHandlerEvent::Shutdown(GracefulClose::RemoteGraceful)))      // TODO: wrong
                 },
                 Async::NotReady => (),
             };

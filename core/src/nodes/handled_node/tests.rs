@@ -68,7 +68,7 @@ impl TestBuilder {
     fn handled_node(&mut self) -> TestHandledNode {
         let mut h = HandledNode::new(self.muxer.clone(), self.handler.clone());
         if self.want_open_substream {
-            h.node.get_mut().open_substream(self.substream_user_data).expect("open substream should work");
+            h.node.open_substream(self.substream_user_data).expect("open substream should work");
         }
         h
     }
@@ -254,7 +254,7 @@ fn poll_with_unready_node_stream_and_handler_emits_custom_event() {
         .handled_node();
 
     assert_matches!(handled.poll(), Ok(Async::Ready(Some(event))) => {
-        assert_matches!(event, OutEvent::Custom("pineapple"))
+        assert_matches!(event, HandledNodeOutEvent::HandlerEvent(OutEvent::Custom("pineapple")))
     });
 }
 

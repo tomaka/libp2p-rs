@@ -34,5 +34,5 @@ pub mod node;
 pub mod raw_swarm;
 
 pub use self::node::Substream;
-pub use self::handled_node::{NodeHandlerEvent, NodeHandlerEndpoint};
+pub use self::handled_node::{GracefulClose, NodeHandlerEvent, NodeHandlerEndpoint};
 pub use self::raw_swarm::{ConnectedPoint, Peer, RawSwarm, RawSwarmEvent};

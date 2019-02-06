@@ -25,7 +25,7 @@ use crate::{
         node::Substream,
         handled_node_tasks::{HandledNodesEvent, HandledNodesTasks, TaskClosedEvent},
         handled_node_tasks::{IntoNodeHandler, Task as HandledNodesTask, TaskId},
-        handled_node::{HandledNodeError, NodeHandler}
+        handled_node::{GracefulClose, HandledNodeError, NodeHandler}
     }
 };
 use fnv::FnvHashMap;
@@ -84,21 +84,12 @@ pub enum CollectionEvent<'a, TInEvent:'a , TOutEvent: 'a, THandler: 'a, TReachEr
 
     /// A connection to a node has been closed.
     ///
-    /// This happens once both the inbound and outbound channels are closed, and no more outbound
-    /// substream attempt is pending.
+    /// Can only happen after a node has been successfully reached.
     NodeClosed {
         /// Identifier of the node.
         peer_id: TPeerId,
-    },
-
-    /// A connection to a node has errored.
-    ///
-    /// Can only happen after a node has been successfully reached.
-    NodeError {
-        /// Identifier of the node.
-        peer_id: TPeerId,
         /// The error that happened.
-        error: HandledNodeError<THandlerErr>,
+        result: Result<GracefulClose, HandledNodeError<THandlerErr>>,
     },
 
     /// An error happened on the future that was trying to reach a node.
@@ -134,15 +125,10 @@ where TOutEvent: fmt::Debug,
                 .field(inner)
                 .finish()
             },
-            CollectionEvent::NodeClosed { ref peer_id } => {
+            CollectionEvent::NodeClosed { ref peer_id, ref result } => {
                 f.debug_struct("CollectionEvent::NodeClosed")
                 .field("peer_id", peer_id)
-                .finish()
-            },
-            CollectionEvent::NodeError { ref peer_id, ref error } => {
-                f.debug_struct("CollectionEvent::NodeError")
-                .field("peer_id", peer_id)
-                .field("error", error)
+                .field("result", result)
                 .finish()
             },
             CollectionEvent::ReachError { ref id, ref error, .. } => {
@@ -410,7 +396,7 @@ where
                             handler,
                         })
                     },
-                    (Some(TaskState::Pending), Ok(()), _) => {
+                    (Some(TaskState::Pending), Ok(_), _) => {
                         panic!("The API of HandledNodesTasks guarantees that a task cannot \
                                 gracefully closed before being connected to a node, in which case \
                                 its state should be Connected and not Pending; QED");
@@ -425,21 +411,22 @@ where
                         panic!("The HandledNodesTasks is guaranteed to always return the handler \
                                 when producing a TaskClosedEvent::Reach error");
                     },
-                    (Some(TaskState::Connected(peer_id)), Ok(()), _handler) => {
+                    (Some(TaskState::Connected(peer_id)), Ok(reason), _handler) => {
                         debug_assert!(_handler.is_none());
                         let _node_task_id = self.nodes.remove(&peer_id);
                         debug_assert_eq!(_node_task_id, Some(id));
                         Async::Ready(CollectionEvent::NodeClosed {
                             peer_id,
+                            result: Ok(reason),
                         })
                     },
                     (Some(TaskState::Connected(peer_id)), Err(TaskClosedEvent::Node(err)), _handler) => {
                         debug_assert!(_handler.is_none());
                         let _node_task_id = self.nodes.remove(&peer_id);
                         debug_assert_eq!(_node_task_id, Some(id));
-                        Async::Ready(CollectionEvent::NodeError {
+                        Async::Ready(CollectionEvent::NodeClosed {
                             peer_id,
-                            error: err,
+                            result: Err(err),
                         })
                     },
                     (Some(TaskState::Connected(_)), Err(TaskClosedEvent::Reach(_)), _) => {
