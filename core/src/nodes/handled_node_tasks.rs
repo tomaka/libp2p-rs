@@ -278,11 +278,12 @@ impl<TInEvent, TOutEvent, TIntoHandler, TReachErr, THandlerErr, TPeerId>
                     // `close()` on this task earlier. Therefore no new event should be generated
                     // for this task.
                     if !self.tasks.contains_key(&task_id) {
-                        continue;
+                        panic!();
                     };
 
                     match message {
                         InToExtMessage::NodeEvent(event) => {
+                            println!("node event received on rx");
                             break Async::Ready(HandledNodesEvent::NodeEvent {
                                 id: task_id,
                                 event,
@@ -328,7 +329,8 @@ impl<'a, TInEvent> Task<'a, TInEvent> {
         // It is possible that the sender is closed if the background task has already finished
         // but the local state hasn't been updated yet because we haven't been polled in the
         // meanwhile.
-        let _ = self.inner.get_mut().unbounded_send(event);
+        let err = self.inner.get_mut().unbounded_send(event);
+        if err.is_err() { panic!() }
     }
 
     /// Returns the task id.
@@ -499,7 +501,9 @@ where
                             },
                             Ok(Async::Ready(Some(event))) => {
                                 let event = InToExtMessage::NodeEvent(event);
+                                println!("sending on tx");
                                 if self.events_tx.unbounded_send((event, self.id)).is_err() {
+                                    println!("sending on tx failed!");
                                     node.shutdown();
                                 }
                             }
