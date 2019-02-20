@@ -119,7 +119,7 @@ fn main() {
     };
 
     // Listen on all interfaces and whatever port the OS assigns
-    let addr = libp2p::Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/0".parse().unwrap()).unwrap();
+    let addr = libp2p::Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/udp/0/quic".parse().unwrap()).unwrap();
     println!("Listening on {:?}", addr);
 
     // Reach out to another node if specified

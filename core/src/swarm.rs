@@ -260,6 +260,7 @@ where TBehaviour: NetworkBehaviour,
                     self.behaviour.inject_node_event(peer_id, event);
                 },
                 Async::Ready(RawSwarmEvent::Connected { peer_id, endpoint }) => {
+                    dbg!((&peer_id, &endpoint));
                     self.behaviour.inject_connected(peer_id, endpoint);
                 },
                 Async::Ready(RawSwarmEvent::NodeClosed { peer_id, endpoint, .. }) => {
@@ -273,14 +274,18 @@ where TBehaviour: NetworkBehaviour,
                     incoming.accept(handler.into_node_handler_builder());
                 },
                 Async::Ready(RawSwarmEvent::ListenerClosed { .. }) => {},
-                Async::Ready(RawSwarmEvent::IncomingConnectionError { .. }) => {},
+                Async::Ready(RawSwarmEvent::IncomingConnectionError { error, .. }) => {
+                    dbg!(error);
+                },
                 Async::Ready(RawSwarmEvent::DialError { peer_id, multiaddr, error, new_state }) => {
+                    dbg!(&error);
                     self.behaviour.inject_addr_reach_failure(Some(&peer_id), &multiaddr, &error);
                     if let raw_swarm::PeerState::NotConnected = new_state {
                         self.behaviour.inject_dial_failure(&peer_id);
                     }
                 },
                 Async::Ready(RawSwarmEvent::UnknownPeerDialError { multiaddr, error, .. }) => {
+                    dbg!(&error);
                     self.behaviour.inject_addr_reach_failure(None, &multiaddr, &error);
                 },
             }

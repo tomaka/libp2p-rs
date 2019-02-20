@@ -185,6 +185,8 @@ pub use libp2p_ping as ping;
 #[doc(inline)]
 pub use libp2p_plaintext as plaintext;
 #[doc(inline)]
+pub use libp2p_quic as quic;
+#[doc(inline)]
 pub use libp2p_ratelimit as ratelimit;
 #[doc(inline)]
 pub use libp2p_secio as secio;
@@ -226,7 +228,26 @@ use std::{error, time::Duration};
 pub fn build_development_transport(keypair: identity::Keypair)
     -> impl Transport<Output = (PeerId, impl core::muxing::StreamMuxer<OutboundSubstream = impl Send, Substream = impl Send> + Send + Sync), Error = impl error::Error + Send, Listener = impl Send, Dial = impl Send, ListenerUpgrade = impl Send> + Clone
 {
-     build_tcp_ws_secio_mplex_yamux(keypair)
+    /*let transport = CommonTransport::new()
+        .with_upgrade(secio::SecioConfig::new(keypair))
+        .and_then(move |out, endpoint| {
+            let peer_id = PeerId::from(out.remote_key);
+            let peer_id2 = peer_id.clone();
+            let upgrade = core::upgrade::SelectUpgrade::new(yamux::Config::default(), mplex::MplexConfig::new())
+                // TODO: use a single `.map` instead of two maps
+                .map_inbound(move |muxer| (peer_id, muxer))
+                .map_outbound(move |muxer| (peer_id2, muxer));
+
+            core::upgrade::apply(out.stream, upgrade, endpoint)
+        });*/
+
+    // TODO:
+    let quic_endpoint = quic::QuicEndpoint::new(keypair).unwrap();     // TODO: no
+    //let transport = transport.or_transport(quic::QuicConfig::from(quic_endpoint));
+    quic::QuicConfig::from(quic_endpoint)
+    /*transport
+        .map(|((id, muxer,)| (id, core::muxing::StreamMuxerBox::new(muxer)))*/
+        .with_timeout(Duration::from_secs(20))
 }
 
 /// Builds an implementation of `Transport` that is suitable for usage with the `Swarm`.
