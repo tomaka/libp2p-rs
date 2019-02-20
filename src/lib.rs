@@ -165,6 +165,8 @@ pub use libp2p_ping as ping;
 #[doc(inline)]
 pub use libp2p_plaintext as plaintext;
 #[doc(inline)]
+pub use libp2p_quic as quic;
+#[doc(inline)]
 pub use libp2p_ratelimit as ratelimit;
 #[doc(inline)]
 pub use libp2p_secio as secio;
