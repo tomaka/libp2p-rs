@@ -1,0 +1,22 @@
+[package]
+name = "libp2p-chaos"
+edition = "2018"
+description = "Wrapper around libp2p transport that adds chaos to the network"
+version = "0.1.0"
+authors = ["Parity Technologies <admin@parity.io>"]
+license = "MIT"
+repository = "https://github.com/libp2p/rust-libp2p"
+keywords = ["peer-to-peer", "libp2p", "networking"]
+categories = ["network-programming", "asynchronous"]
+
+[dependencies]
+libp2p-core = { version = "0.7.0", path = "../../core" }
+log = "0.4.1"
+futures = "0.1"
+rand = "0.6"
+tokio-io = "0.1"
+tokio-timer = "0.2"
+
+[dev-dependencies]
+libp2p-tcp = { version = "0.7.0", path = "../../transports/tcp" }
+tokio = "0.1"
