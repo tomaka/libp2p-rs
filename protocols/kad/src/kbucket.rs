@@ -29,6 +29,7 @@ use arrayvec::ArrayVec;
 use bigint::U512;
 use libp2p_core::PeerId;
 use multihash::Multihash;
+use std::num::NonZeroUsize;
 use std::slice::IterMut as SliceIterMut;
 use std::time::{Duration, Instant};
 use std::vec::IntoIter as VecIntoIter;
@@ -96,9 +97,7 @@ pub trait KBucketsPeerId<TOther = Self>: PartialEq<TOther> {
 
     /// Returns then number of bits that are necessary to store the distance between peer IDs.
     /// Used for pre-allocations.
-    ///
-    /// > **Note**: Returning 0 would lead to a panic.
-    fn max_distance() -> usize;
+    fn max_distance() -> NonZeroUsize;
 }
 
 impl KBucketsPeerId for PeerId {
@@ -106,7 +105,7 @@ impl KBucketsPeerId for PeerId {
         <Multihash as KBucketsPeerId<Multihash>>::distance_with(self.as_ref(), other.as_ref())
     }
 
-    fn max_distance() -> usize {
+    fn max_distance() -> NonZeroUsize {
         <Multihash as KBucketsPeerId>::max_distance()
     }
 }
@@ -116,7 +115,7 @@ impl KBucketsPeerId<PeerId> for Multihash {
         <Multihash as KBucketsPeerId<Multihash>>::distance_with(self, other.as_ref())
     }
 
-    fn max_distance() -> usize {
+    fn max_distance() -> NonZeroUsize {
         <PeerId as KBucketsPeerId>::max_distance()
     }
 }
@@ -131,8 +130,8 @@ impl KBucketsPeerId for Multihash {
         512 - xor.leading_zeros()
     }
 
-    fn max_distance() -> usize {
-        512
+    fn max_distance() -> NonZeroUsize {
+        NonZeroUsize::new(512).expect("512 is not zero; QED")
     }
 }
 
@@ -145,8 +144,10 @@ where
         A::distance_with(&self.0, &other.0) + B::distance_with(&self.1, &other.1)
     }
 
-    fn max_distance() -> usize {
-        <A as KBucketsPeerId<A>>::max_distance() + <B as KBucketsPeerId<B>>::max_distance()
+    fn max_distance() -> NonZeroUsize {
+        let n = <A as KBucketsPeerId<A>>::max_distance().get()
+            .saturating_add(<B as KBucketsPeerId<B>>::max_distance().get());
+        NonZeroUsize::new(n).expect("Saturating-add of two non-zeros can't be zero; QED")
     }
 }
 
@@ -158,7 +159,7 @@ where
         T::distance_with(*self, *other)
     }
 
-    fn max_distance() -> usize {
+    fn max_distance() -> NonZeroUsize {
         <T as KBucketsPeerId>::max_distance()
     }
 }
@@ -171,7 +172,7 @@ where
     pub fn new(my_id: TPeerId, unresponsive_timeout: Duration) -> Self {
         KBucketsTable {
             my_id,
-            tables: (0..TPeerId::max_distance())
+            tables: (0..TPeerId::max_distance().get())
                 .map(|_| KBucket {
                     nodes: ArrayVec::new(),
                     first_connected_pos: 0,
@@ -211,7 +212,7 @@ where
                 // If all the nodes in the bucket are connected, then there shouldn't be any
                 // pending node.
                 debug_assert!(*first_connected_pos >= 1);
-                let _ = table.nodes.remove(0);
+                table.nodes.remove(0);
                 if pending.connected {
                     *first_connected_pos -= 1;
                     table.nodes.insert(*first_connected_pos, pending.node);
@@ -500,14 +501,14 @@ where
     pub fn value(&mut self) -> &mut TVal {
         let table = {
             let num = self.parent.bucket_num(&self.peer_id)
-                .expect("we can only build a EntryInKbucketPending if we know of a bucket; QED");
+                .expect("we can only build a EntryInKbucketDiscPending if we know of a bucket; QED");
             &mut self.parent.tables[num]
         };
 
         assert!(table.pending_node.as_ref().map(|n| &n.node.id) == Some(self.peer_id));
         &mut table.pending_node
             .as_mut()
-            .expect("we can only build a EntryInKbucketPending if the node is pending; QED")
+            .expect("we can only build a EntryInKbucketDiscPending if the node is pending; QED")
             .node.value
     }
 
@@ -516,12 +517,12 @@ where
         {
             let table = {
                 let num = self.parent.bucket_num(&self.peer_id)
-                    .expect("we can only build a EntryInKbucketConnPending if we know of a bucket; QED");
+                    .expect("we can only build a EntryInKbucketDiscPending if we know of a bucket; QED");
                 &mut self.parent.tables[num]
             };
 
             let mut pending = table.pending_node.as_mut()
-                .expect("we can only build a EntryInKbucketConnPending if there's a pending node; QED");
+                .expect("we can only build a EntryInKbucketDiscPending if there's a pending node; QED");
             debug_assert!(!pending.connected);
             pending.connected = true;
         }
@@ -614,7 +615,7 @@ where
     pub fn insert_connected(self, value: TVal) -> InsertOutcome<TPeerId> {
         let table = {
             let num = self.parent.bucket_num(&self.peer_id)
-                .expect("we can only build a EntryInKbucketDisc if we know of a bucket; QED");
+                .expect("we can only build a EntryNotInKbucket if we know of a bucket; QED");
             &mut self.parent.tables[num]
         };
 
@@ -647,7 +648,7 @@ where
     pub fn insert_disconnected(self, value: TVal) -> InsertOutcome<TPeerId> {
         let table = {
             let num = self.parent.bucket_num(&self.peer_id)
-                .expect("we can only build a EntryInKbucketDisc if we know of a bucket; QED");
+                .expect("we can only build a EntryNotInKbucket if we know of a bucket; QED");
             &mut self.parent.tables[num]
         };
 
