@@ -18,20 +18,63 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-'use strict';
+const multiaddr = require("multiaddr");
 
-const multiaddr = require('multiaddr');
-
-export default function() {
-    dial: (addr) => {
-        let ws = new WebSocket("ws://127.0.0.1:30333");
-        return new Promise((resolve, reject) => {
-            ws.onopen = () => {
-                resolve();
-            };
-            ws.onerror = () => {
-                reject();
-            }
-        });
-    }
-};
+export default () => {
+    return {
+        listen_on: (addr) => {
+            throw "Listening on WebSockets is not possible from within a browser";
+        },
+        dial: (addr) => {
+            // TODO: handle ip6
+            let parsed_addr = addr.match(/^\/ip4\/(.*?)\/tcp\/(.*?)\/ws$/);
+            if (parsed_addr == null)
+                throw "Address not supported: " + addr;
+            let ws = new WebSocket("ws://" + parsed_addr[1] + ":" + parsed_addr[2]);
+            let read_data = new Array();
+            let pending_read = { promise: null };
+            return new Promise((resolve, reject) => {
+                // TODO: handle ws.onerror properly after dialing has happened
+                ws.onerror = (ev) => reject(ev);
+                ws.onmessage = (ev) => {
+                    if (pending_read.promise !== null) {
+                        var reader = new FileReader();
+                        reader.addEventListener("loadend", function() {
+                            pending_read.promise(reader.result);
+                            pending_read.promise = null;
+                        });
+                        reader.readAsArrayBuffer(ev.data);
+                    } else {
+                        read_data.push(ev.data);
+                    }
+                };
+                ws.onopen = () => resolve({
+                    read: () => {
+                        if (read_data.length != 0) {
+                            return new Promise((resolve, reject) => {
+                                var reader = new FileReader();
+                                reader.addEventListener("loadend", function() {
+                                    resolve(reader.result);
+                                });
+                                reader.readAsArrayBuffer(read_data.shift());
+                            });
+                        } else {
+                            return new Promise((resolve, reject) => {
+                                if (pending_read.promise !== null)
+                                    throw "Already have a pending promise; broken contract";
+                                pending_read.promise = resolve;
+                            });
+                        }
+                    },
+                    write: (data) => {
+                        ws.send(data);
+                        // TODO: use setTimeout and bufferedAmount instead of succeeding instantly
+                        return Promise.resolve();
+                    },
+                    shutdown: () => {},
+                    close: () => ws.close()
+                });
+            });
+        }
+    };
+}

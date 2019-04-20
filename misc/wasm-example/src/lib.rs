@@ -111,7 +111,7 @@ pub fn start(transport: libp2p::wasm_ext::ffi::Transport) -> JsValue {
 
         let mut kad = libp2p::kad::Kademlia::without_init(local_peer_id.clone());
         kad.add_connected_address(
-            &"Qmea5wdBowgApXKtbLhF9MY3bgkkiiywfGKWLndi2uYXfR".parse().unwrap(),
+            &"QmSY3MkoNvxRmsbwqfEqzCwiYv2A5wVw2MNWUSX3wrSxBu".parse().unwrap(),
             "/ip4/127.0.0.1/tcp/30333/ws".parse().unwrap()
         );
 
