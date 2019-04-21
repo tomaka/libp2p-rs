@@ -22,59 +22,103 @@ const multiaddr = require("multiaddr");
 
 export default () => {
     return {
+        dial: dial,
         listen_on: (addr) => {
             throw "Listening on WebSockets is not possible from within a browser";
         },
-        dial: (addr) => {
-            // TODO: handle ip6
-            let parsed_addr = addr.match(/^\/ip4\/(.*?)\/tcp\/(.*?)\/ws$/);
-            if (parsed_addr == null)
-                throw "Address not supported: " + addr;
-            let ws = new WebSocket("ws://" + parsed_addr[1] + ":" + parsed_addr[2]);
-            let read_data = new Array();
-            let pending_read = { promise: null };
-            return new Promise((resolve, reject) => {
-                // TODO: handle ws.onerror properly after dialing has happened
-                ws.onerror = (ev) => reject(ev);
-                ws.onmessage = (ev) => {
-                    if (pending_read.promise !== null) {
-                        var reader = new FileReader();
-                        reader.addEventListener("loadend", function() {
-                            pending_read.promise(reader.result);
-                            pending_read.promise = null;
-                        });
-                        reader.readAsArrayBuffer(ev.data);
-                    } else {
-                        read_data.push(ev.data);
-                    }
-                };
-                ws.onopen = () => resolve({
-                    read: () => {
-                        if (read_data.length != 0) {
-                            return new Promise((resolve, reject) => {
-                                var reader = new FileReader();
-                                reader.addEventListener("loadend", function() {
-                                    resolve(reader.result);
-                                });
-                                reader.readAsArrayBuffer(read_data.shift());
-                            });
-                        } else {
-                            return new Promise((resolve, reject) => {
-                                if (pending_read.promise !== null)
-                                    throw "Already have a pending promise; broken contract";
-                                pending_read.promise = resolve;
-                            });
-                        }
-                    },
-                    write: (data) => {
-                        ws.send(data);
-                        // TODO: use setTimeout and bufferedAmount instead of succeeding instantly
-                        return Promise.resolve();
-                    },
-                    shutdown: () => {},
-                    close: () => ws.close()
-                });
-            });
-        }
     };
 }
+
+/// Turns a string multiaddress into a WebSockets string URL.
+const multiaddr_to_ws = (addr) => {
+    let parsed = addr.match(/^\/ip(4|6)\/(.*?)\/tcp\/(.*?)\/(ws|wss)$/);
+    if (parsed != null) {
+        if (parsed[1] == '6') {
+            return parsed[4] + "://[" + parsed[2] + "]:" + parsed[3];
+        } else {
+            return parsed[4] + "://" + parsed[2] + ":" + parsed[3];
+        }
+    }
+
+    throw "Address not supported: " + addr;
+}
+
+/// Attempt to dial a multiaddress.
+const dial = (addr) => {
+    let ws = new WebSocket(multiaddr_to_ws(addr));
+    let reader = read_queue();
+
+    return new Promise((resolve, reject) => {
+        // TODO: handle ws.onerror properly after dialing has happened
+        ws.onerror = (ev) => reject(ev);
+        ws.onmessage = (ev) => reader.inject_blob(ev.data);
+        ws.onopen = () => resolve({
+            read: () => reader.next(),
+            write: (data) => {
+                ws.send(data);
+                return promise_when_ws_finished(ws);
+            },
+            shutdown: () => {},
+            close: () => ws.close()
+        });
+    });
+}
+
+/// Takes a WebSocket object and returns a Promise that resolves when bufferedAmount is 0.
+const promise_when_ws_finished = (ws) => {
+    if (ws.bufferedAmount == 0) {
+        return Promise.resolve();
+    }
+
+    return new Promise((resolve, reject) => {
+        setTimeout(function check() {
+            if (ws.bufferedAmount == 0) {
+                resolve();
+            } else {
+                setTimeout(check, 100);
+            }
+        }, 2);
+    })
+}
+
+// Creates a reading system with the `inject_blob` and `next` methods.
+const read_queue = () => {
+    // Array of promises resolving to ArrayBuffers, that haven't been transmitted back with
+    // `next` yet.
+    let queue = new Array();
+    // If `resolve` isn't null, it is a function.
+    let pending_read = { resolve: null };
+
+    return {
+        // Inserts a new Blob in the queue.
+        inject_blob: (blob) => {
+            if (pending_read.resolve != null) {
+                var resolve = pending_read.resolve;
+                pending_read.resolve = null;
+
+                var reader = new FileReader();
+                reader.addEventListener("loadend", () => resolve(reader.result));
+                reader.readAsArrayBuffer(blob);
+            } else {
+                queue.push(new Promise((resolve, reject) => {
+                    var reader = new FileReader();
+                    reader.addEventListener("loadend", () => resolve(reader.result));
+                    reader.readAsArrayBuffer(blob);
+                }));
+            }
+        },
+
+        // Returns a Promise that yields the next entry as an ArrayBuffer.
+        next: () => {
+            if (queue.length != 0) {
+                return queue.shift(0);
+            } else {
+                if (pending_read.resolve !== null)
+                    throw "Internal error: already have a pending promise";
+                return new Promise((resolve, reject) => {
+                    pending_read.resolve = resolve;
+                });
+            }
+        }
+    };
+};
