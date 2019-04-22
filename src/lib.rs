@@ -169,6 +169,8 @@ pub use libp2p_dns as dns;
 #[doc(inline)]
 pub use libp2p_identify as identify;
 #[doc(inline)]
+pub use libp2p_http as http;
+#[doc(inline)]
 pub use libp2p_kad as kad;
 #[doc(inline)]
 pub use libp2p_floodsub as floodsub;
