@@ -71,7 +71,15 @@ pub mod ffi {
         #[wasm_bindgen(method, catch)]
         pub fn listen_on(this: &Transport, multiaddr: &str) -> Result<js_sys::Iterator, JsValue>;
 
-        /// Returns a `Readable​Stream​` that .
+        /// Returns an `Iterator` of `Promise`s that yield packets of data. Each `Promise` can
+        /// yield either an `ArrayBuffer`, or `null` to signal EOF.
+        ///
+        /// EOF can also be signaled by having the iterator finish.
+        ///
+        /// Each element of the iterator is pulled only after the previous `Promise` has finished.
+        ///
+        /// If the `Promise` returns an error, the reading side of the connection is considered
+        /// unrecoverable and the connection should be closed as soon as possible.
         #[wasm_bindgen(method, getter)]
         pub fn read(this: &Connection) -> js_sys::Iterator;
 

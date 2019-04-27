@@ -1,0 +1,30 @@
+[package]
+name = "libp2p-wasm-example"
+edition = "2018"
+description = "Core traits and structs of libp2p"
+version = "0.1.0"
+authors = ["Parity Technologies <admin@parity.io>"]
+license = "MIT"
+repository = "https://github.com/libp2p/rust-libp2p"
+keywords = ["peer-to-peer", "libp2p", "networking"]
+categories = ["network-programming", "asynchronous", "wasm"]
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+clear_on_drop = { version = "0.2", features = ["no_cc"] }
+console_error_panic_hook = { version = "0.1.5", optional = true }
+console_log = "0.1.2"
+futures = "0.1"
+js-sys = "0.3.14"
+libp2p = { version = "0.7.0", path = "../../.." }
+log = "0.4.6"
+rand = { version = "0.6", features = ["wasm-bindgen"] }
+wasm-bindgen = "0.2.33"
+wasm-bindgen-futures = "0.3.10"
+wee_alloc = "0.4.2"
+
+[features]
+default = ["console_error_panic_hook"]
