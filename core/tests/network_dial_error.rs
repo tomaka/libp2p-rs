@@ -45,7 +45,7 @@ impl<TSubstream> Default for TestHandler<TSubstream> {
 
 impl<TSubstream> ProtocolsHandler for TestHandler<TSubstream>
 where
-    TSubstream: tokio_io::AsyncRead + tokio_io::AsyncWrite
+    TSubstream: futures::AsyncRead + futures::AsyncWrite
 {
     type InEvent = ();      // TODO: cannot be Void (https://github.com/servo/rust-smallvec/issues/139)
     type OutEvent = ();      // TODO: cannot be Void (https://github.com/servo/rust-smallvec/issues/139)
@@ -80,8 +80,8 @@ where
 
     fn connection_keep_alive(&self) -> KeepAlive { KeepAlive::No }
 
-    fn poll(&mut self) -> Poll<ProtocolsHandlerEvent<Self::OutboundProtocol, Self::OutboundOpenInfo, Self::OutEvent>, Self::Error> {
-        Ok(Async::NotReady)
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<ProtocolsHandlerEvent<Self::OutboundProtocol, Self::OutboundOpenInfo, Self::OutEvent, Self::Error>, Self::Error> {
+        Poll::Pending
     }
 }
 
@@ -137,11 +137,11 @@ fn deny_incoming_connec() {
         .into_not_connected().unwrap()
         .connect(address.clone(), TestHandler::default().into_node_handler_builder());
 
-    let future = future::poll_fn(|| -> Poll<(), io::Error> {
+    let future = future::poll_fn(|| -> Poll<Result<(), io::Error>> {
         match swarm1.poll() {
             Async::Ready(NetworkEvent::IncomingConnection(inc)) => drop(inc),
             Async::Ready(_) => unreachable!(),
-            Async::NotReady => (),
+            Poll::Pending => (),
         }
 
         match swarm2.poll() {
@@ -156,10 +156,10 @@ fn deny_incoming_connec() {
                 return Ok(Async::Ready(()));
             },
             Async::Ready(_) => unreachable!(),
-            Async::NotReady => (),
+            Poll::Pending => (),
         }
 
-        Ok(Async::NotReady)
+        Poll::Pending
     });
 
     tokio::runtime::current_thread::Runtime::new().unwrap().block_on(future).unwrap();
@@ -212,7 +212,7 @@ fn dial_self() {
 
     let mut got_dial_err = false;
     let mut got_inc_err = false;
-    let future = future::poll_fn(|| -> Poll<(), io::Error> {
+    let future = future::poll_fn(|| -> Poll<Result<(), io::Error>> {
         loop {
             match swarm.poll() {
                 Async::Ready(NetworkEvent::UnknownPeerDialError {
@@ -244,7 +244,7 @@ fn dial_self() {
                     inc.accept(TestHandler::default().into_node_handler_builder());
                 },
                 Async::Ready(ev) => unreachable!("{:?}", ev),
-                Async::NotReady => break Ok(Async::NotReady),
+                Poll::Pending => break Poll::Pending,
             }
         }
     });
@@ -316,7 +316,7 @@ fn multiple_addresses_err() {
         .connect_iter(addresses.clone(), TestHandler::default().into_node_handler_builder())
         .unwrap();
 
-    let future = future::poll_fn(|| -> Poll<(), io::Error> {
+    let future = future::poll_fn(|| -> Poll<Result<(), io::Error>> {
         loop {
             match swarm.poll() {
                 Async::Ready(NetworkEvent::DialError {
@@ -341,7 +341,7 @@ fn multiple_addresses_err() {
                     }
                 },
                 Async::Ready(_) => unreachable!(),
-                Async::NotReady => break Ok(Async::NotReady),
+                Poll::Pending => break Poll::Pending,
             }
         }
     });

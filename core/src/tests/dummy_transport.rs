@@ -50,7 +50,7 @@ pub(crate) struct DummyTransport {
 impl DummyTransport {
     pub(crate) fn new() -> Self {
         DummyTransport {
-            listener_state: ListenerState::Ok(Async::NotReady),
+            listener_state: ListenerState::Poll::Pending,
             next_peer_id: None,
             dial_should_fail: false,
         }
@@ -80,7 +80,7 @@ impl Transport for DummyTransport {
     {
         match self.listener_state {
             ListenerState::Ok(state) => match state {
-                Async::NotReady => Ok(Box::new(stream::poll_fn(|| Ok(Async::NotReady)))),
+                Poll::Pending => Ok(Box::new(stream::poll_fn(|| Poll::Pending))),
                 Async::Ready(Some(event)) => Ok(Box::new(stream::poll_fn(move || {
                     Ok(Async::Ready(Some(event.clone().map(future::ok))))
                 }))),

@@ -37,7 +37,7 @@
 
 /// Multi-address re-export.
 pub use multiaddr;
-pub use multistream_select::Negotiated;
+pub type Negotiated<T> = futures::compat::Compat01As03<multistream_select::Negotiated<futures::compat::Compat<T>>>;
 
 mod keys_proto;
 mod peer_id;

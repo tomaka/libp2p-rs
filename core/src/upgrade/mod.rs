@@ -68,7 +68,7 @@ mod transfer;
 
 use futures::future::Future;
 
-pub use multistream_select::Negotiated;
+pub use crate::Negotiated;
 pub use self::{
     apply::{apply, apply_inbound, apply_outbound, InboundUpgradeApply, OutboundUpgradeApply},
     denied::DeniedUpgrade,
@@ -143,7 +143,8 @@ pub trait InboundUpgrade<C>: UpgradeInfo {
     /// Possible error during the handshake.
     type Error;
     /// Future that performs the handshake with the remote.
-    type Future: Future<Item = Self::Output, Error = Self::Error>;
+    // TODO: remove Unpin
+    type Future: Future<Output = Result<Self::Output, Self::Error>> + Unpin;
 
     /// After we have determined that the remote supports one of the protocols we support, this
     /// method is called to start the handshake.
@@ -183,7 +184,8 @@ pub trait OutboundUpgrade<C>: UpgradeInfo {
     /// Possible error during the handshake.
     type Error;
     /// Future that performs the handshake with the remote.
-    type Future: Future<Item = Self::Output, Error = Self::Error>;
+    // TODO: remove Unpin
+    type Future: Future<Output = Result<Self::Output, Self::Error>> + Unpin;
 
     /// After we have determined that the remote supports one of the protocols we support, this
     /// method is called to start the handshake.

@@ -113,13 +113,13 @@ impl NodeHandler for Handler {
             _ => unreachable!(),
         }
     }
-    fn poll(&mut self) -> Poll<NodeHandlerEvent<usize, OutEvent>, IoError> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<NodeHandlerEvent<usize, OutEvent>, IoError> {
         match self.state.take() {
             Some(ref state) => match state {
                 HandlerState::Ready(event) => Ok(Async::Ready(event.clone())),
                 HandlerState::Err => Err(io::Error::new(io::ErrorKind::Other, "oh noes")),
             },
-            None => Ok(Async::NotReady),
+            None => Poll::Pending,
         }
     }
 }

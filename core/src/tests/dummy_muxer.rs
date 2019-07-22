@@ -38,7 +38,7 @@ pub struct DummyOutboundSubstream {}
 /// muxer for higher level components.
 #[derive(Debug, PartialEq, Clone)]
 pub enum DummyConnectionState {
-    Pending, // use this to trigger the Async::NotReady code path
+    Pending, // use this to trigger the Poll::Pending code path
     Opened,  // use this to trigger the Async::Ready(_) code path
 }
 #[derive(Debug, PartialEq, Clone)]
@@ -82,7 +82,7 @@ impl StreamMuxer for DummyMuxer {
     type Error = IoError;
     fn poll_inbound(&self) -> Poll<Self::Substream, IoError> {
         match self.in_connection.state {
-            DummyConnectionState::Pending => Ok(Async::NotReady),
+            DummyConnectionState::Pending => Poll::Pending,
             DummyConnectionState::Opened => Ok(Async::Ready(Self::Substream {})),
         }
     }
@@ -94,7 +94,7 @@ impl StreamMuxer for DummyMuxer {
         _substream: &mut Self::OutboundSubstream,
     ) -> Poll<Self::Substream, IoError> {
         match self.out_connection.state {
-            DummyConnectionState::Pending => Ok(Async::NotReady),
+            DummyConnectionState::Pending => Poll::Pending,
             DummyConnectionState::Opened => Ok(Async::Ready(Self::Substream {})),
         }
     }

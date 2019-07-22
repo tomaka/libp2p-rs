@@ -81,3 +81,7 @@ members = [
     "transports/websocket",
     "transports/wasm-ext"
 ]
+
+# TODO: necessary for some changes in master that are not yet published
+[patch.crates-io]
+futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", rev = "a705910a8d844f6d56527ab9d774be09eb3008d5" }

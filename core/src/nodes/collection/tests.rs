@@ -75,14 +75,14 @@ fn collection_stream_reaches_the_nodes() {
         poll_count += 1;
         let event = cs.poll();
         match poll_count {
-            1 => assert_matches!(event, Async::NotReady),
+            1 => assert_matches!(event, Poll::Pending),
             2 => {
                 assert_matches!(event, Async::Ready(CollectionEvent::NodeReached(_)));
                 return Ok(Async::Ready(())); // stop
             }
             _ => unreachable!()
         }
-        Ok(Async::NotReady)
+        Poll::Pending
     });
     rt.block_on(fut).unwrap();
 }
@@ -102,8 +102,8 @@ fn accepting_a_node_yields_new_entry() {
             let event = cs.poll();
             match poll_count {
                 1 => {
-                    assert_matches!(event, Async::NotReady);
-                    return Ok(Async::NotReady)
+                    assert_matches!(event, Poll::Pending);
+                    return Poll::Pending
                 }
                 2 => {
                     assert_matches!(event, Async::Ready(CollectionEvent::NodeReached(reach_ev)) => {
@@ -150,7 +150,7 @@ fn events_in_a_node_reaches_the_collection_stream() {
     let cs_fut = cs.clone();
     rt.block_on(future::poll_fn(move || -> Poll<_, ()> {
         let mut cs = cs_fut.lock();
-        assert_matches!(cs.poll(), Async::NotReady);
+        assert_matches!(cs.poll(), Poll::Pending);
         Ok(Async::Ready(()))
     })).expect("tokio works");
 
@@ -246,7 +246,7 @@ fn task_closed_with_error_while_task_is_pending_yields_reach_error() {
     let cs_fut = cs.clone();
     rt.block_on(future::poll_fn(move || -> Poll<_, ()> {
         let mut cs = cs_fut.lock();
-        assert_matches!(cs.poll(), Async::NotReady);
+        assert_matches!(cs.poll(), Poll::Pending);
         Ok(Async::Ready(()))
     })).expect("tokio works");
 
@@ -289,7 +289,7 @@ fn task_closed_with_error_when_task_is_connected_yields_node_error() {
     let cs_fut = cs.clone();
     rt.block_on(future::poll_fn(move || -> Poll<_, ()> {
         let mut cs = cs_fut.lock();
-        assert_matches!(cs.poll(), Async::NotReady);
+        assert_matches!(cs.poll(), Poll::Pending);
         // send an event so the Handler errors in two polls
         Ok(cs.complete_broadcast())
     })).expect("tokio works");
@@ -351,7 +351,7 @@ fn interrupting_an_established_connection_is_err() {
     let cs_fut = cs.clone();
     rt.block_on(future::poll_fn(move || -> Poll<_, ()> {
         let mut cs = cs_fut.lock();
-        assert_matches!(cs.poll(), Async::NotReady);
+        assert_matches!(cs.poll(), Poll::Pending);
         // send an event so the Handler errors in two polls
         Ok(Async::Ready(()))
     })).expect("tokio works");

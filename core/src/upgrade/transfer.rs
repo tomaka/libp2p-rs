@@ -20,9 +20,10 @@
 
 //! Contains some helper futures for creating upgrades.
 
-use futures::{prelude::*, try_ready};
-use std::{cmp, error, fmt, io::Cursor, mem};
-use tokio_io::{io, AsyncRead, AsyncWrite};
+use futures::prelude::*;
+use std::{cmp, error, fmt, io::Cursor, mem, pin::Pin, task::Context, task::Poll};
+
+mod io;
 
 /// Send a message to the given socket, then shuts down the writing side.
 ///
@@ -31,21 +32,21 @@ use tokio_io::{io, AsyncRead, AsyncWrite};
 #[inline]
 pub fn write_one<TSocket, TData>(socket: TSocket, data: TData) -> WriteOne<TSocket, TData>
 where
-    TSocket: AsyncWrite,
+    TSocket: AsyncWrite + Unpin,
     TData: AsRef<[u8]>,
 {
     let len_data = build_int_buffer(data.as_ref().len());
     WriteOne {
-        inner: WriteOneInner::WriteLen(io::write_all(socket, len_data), data),
+        inner: WriteOneInner::WriteLen(io::WriteAll::new(socket, len_data), data),
     }
 }
 
 /// Builds a buffer that contains the given integer encoded as variable-length.
-fn build_int_buffer(num: usize) -> io::Window<[u8; 10]> {
+fn build_int_buffer(num: usize) -> futures::io::Window<[u8; 10]> {
     let mut len_data = unsigned_varint::encode::u64_buffer();
     let encoded_len = unsigned_varint::encode::u64(num as u64, &mut len_data).len();
-    let mut len_data = io::Window::new(len_data);
-    len_data.set_end(encoded_len);
+    let mut len_data = futures::io::Window::new(len_data);
+    len_data.set(0..encoded_len);
     len_data
 }
 
@@ -56,60 +57,60 @@ pub struct WriteOne<TSocket, TData = Vec<u8>> {
 
 enum WriteOneInner<TSocket, TData> {
     /// We need to write the data length to the socket.
-    WriteLen(io::WriteAll<TSocket, io::Window<[u8; 10]>>, TData),
+    WriteLen(io::WriteAll<TSocket, futures::io::Window<[u8; 10]>>, TData),
     /// We need to write the actual data to the socket.
     Write(io::WriteAll<TSocket, TData>),
     /// We need to shut down the socket.
-    Shutdown(io::Shutdown<TSocket>),
+    Shutdown(io::Close<TSocket>),
     /// A problem happened during the processing.
     Poisoned,
 }
 
 impl<TSocket, TData> Future for WriteOne<TSocket, TData>
 where
-    TSocket: AsyncWrite,
+    TSocket: AsyncWrite + Unpin,
     TData: AsRef<[u8]>,
 {
-    type Item = ();
-    type Error = std::io::Error;
+    type Output = Result<(), std::io::Error>;
 
-    #[inline]
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        Ok(self.inner.poll()?.map(|_socket| ()))
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        Future::poll(Pin::new(&mut self.inner), cx)
+            .map_ok(|_socket| ())
     }
+}
+
+impl<TSocket, TData> Unpin for WriteOneInner<TSocket, TData> {
 }
 
 impl<TSocket, TData> Future for WriteOneInner<TSocket, TData>
 where
-    TSocket: AsyncWrite,
+    TSocket: AsyncWrite + Unpin,
     TData: AsRef<[u8]>,
 {
-    type Item = TSocket;
-    type Error = std::io::Error;
+    type Output = Result<TSocket, std::io::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         loop {
-            match mem::replace(self, WriteOneInner::Poisoned) {
-                WriteOneInner::WriteLen(mut inner, data) => match inner.poll()? {
-                    Async::Ready((socket, _)) => {
-                        *self = WriteOneInner::Write(io::write_all(socket, data));
+            match mem::replace(&mut *self, WriteOneInner::Poisoned) {
+                WriteOneInner::WriteLen(mut inner, data) => match Future::poll(Pin::new(&mut inner), cx) {
+                    Poll::Ready(Ok((socket, _))) => {
+                        *self = WriteOneInner::Write(io::WriteAll::new(socket, data));
                     }
-                    Async::NotReady => {
+                    Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
+                    Poll::Pending => {
                         *self = WriteOneInner::WriteLen(inner, data);
                     }
                 },
-                WriteOneInner::Write(mut inner) => match inner.poll()? {
-                    Async::Ready((socket, _)) => {
-                        *self = WriteOneInner::Shutdown(tokio_io::io::shutdown(socket));
+                WriteOneInner::Write(mut inner) => match Future::poll(Pin::new(&mut inner), cx) {
+                    Poll::Ready(Ok((socket, _))) => {
+                        *self = WriteOneInner::Shutdown(io::Close::new(socket));
                     }
-                    Async::NotReady => {
+                    Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
+                    Poll::Pending => {
                         *self = WriteOneInner::Write(inner);
                     }
                 },
-                WriteOneInner::Shutdown(ref mut inner) => {
-                    let socket = try_ready!(inner.poll());
-                    return Ok(Async::Ready(socket));
-                }
+                WriteOneInner::Shutdown(ref mut inner) => return Future::poll(Pin::new(inner), cx),
                 WriteOneInner::Poisoned => panic!(),
             }
         }
@@ -155,50 +156,49 @@ enum ReadOneInner<TSocket> {
         max_size: usize,
     },
     // We need to read the actual data from the socket.
-    ReadRest(io::ReadExact<TSocket, io::Window<Vec<u8>>>),
+    ReadRest(io::ReadExact<TSocket, futures::io::Window<Vec<u8>>>),
     /// A problem happened during the processing.
     Poisoned,
 }
 
 impl<TSocket> Future for ReadOne<TSocket>
 where
-    TSocket: AsyncRead,
+    TSocket: AsyncRead + Unpin,
 {
-    type Item = Vec<u8>;
-    type Error = ReadOneError;
+    type Output = Result<Vec<u8>, ReadOneError>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        Ok(self.inner.poll()?.map(|(_, out)| out))
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        Future::poll(Pin::new(&mut self.inner), cx).map_ok(|(_, out)| out)
     }
 }
 
 impl<TSocket> Future for ReadOneInner<TSocket>
 where
-    TSocket: AsyncRead,
+    TSocket: AsyncRead + Unpin,
 {
-    type Item = (TSocket, Vec<u8>);
-    type Error = ReadOneError;
+    type Output = Result<(TSocket, Vec<u8>), ReadOneError>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         loop {
-            match mem::replace(self, ReadOneInner::Poisoned) {
+            match mem::replace(&mut *self, ReadOneInner::Poisoned) {
                 ReadOneInner::ReadLen {
                     mut socket,
                     mut len_buf,
                     max_size,
                 } => {
-                    match socket.read_buf(&mut len_buf)? {
-                        Async::Ready(num_read) => {
+                    match AsyncRead::poll_read(Pin::new(&mut socket), cx, len_buf.get_mut()) {
+                        Poll::Ready(Err(err)) => return Poll::Ready(Err(err.into())),
+                        Poll::Ready(Ok(num_read)) => {
                             // Reaching EOF before finishing to read the length is an error, unless
                             // the EOF is at the very beginning of the substream, in which case we
                             // assume that the data is empty.
                             if num_read == 0 {
                                 if len_buf.position() == 0 {
-                                    return Ok(Async::Ready((socket, Vec::new())));
+                                    return Poll::Ready(Ok((socket, Vec::new())));
                                 } else {
-                                    return Err(ReadOneError::Io(
+                                    return Poll::Ready(Err(ReadOneError::Io(
                                         std::io::ErrorKind::UnexpectedEof.into(),
-                                    ));
+                                    )));
                                 }
                             }
 
@@ -208,10 +208,10 @@ where
                                 unsigned_varint::decode::usize(len_buf_with_data)
                             {
                                 if len >= max_size {
-                                    return Err(ReadOneError::TooLarge {
+                                    return Poll::Ready(Err(ReadOneError::TooLarge {
                                         requested: len,
                                         max: max_size,
-                                    });
+                                    }));
                                 }
 
                                 // Create `data_buf` containing the start of the data that was
@@ -219,9 +219,9 @@ where
                                 let n = cmp::min(data_start.len(), len);
                                 let mut data_buf = vec![0; len];
                                 data_buf[.. n].copy_from_slice(&data_start[.. n]);
-                                let mut data_buf = io::Window::new(data_buf);
-                                data_buf.set_start(data_start.len());
-                                *self = ReadOneInner::ReadRest(io::read_exact(socket, data_buf));
+                                let mut data_buf = futures::io::Window::new(data_buf);
+                                data_buf.set(data_start.len()..);
+                                *self = ReadOneInner::ReadRest(io::ReadExact::new(socket, data_buf));
                             } else {
                                 *self = ReadOneInner::ReadLen {
                                     socket,
@@ -230,24 +230,25 @@ where
                                 };
                             }
                         }
-                        Async::NotReady => {
+                        Poll::Pending => {
                             *self = ReadOneInner::ReadLen {
                                 socket,
                                 len_buf,
                                 max_size,
                             };
-                            return Ok(Async::NotReady);
+                            return Poll::Pending;
                         }
                     }
                 }
                 ReadOneInner::ReadRest(mut inner) => {
-                    match inner.poll()? {
-                        Async::Ready((socket, data)) => {
-                            return Ok(Async::Ready((socket, data.into_inner())));
+                    match Future::poll(Pin::new(&mut inner), cx) {
+                        Poll::Ready(Err(err)) => return Poll::Ready(Err(err.into())),
+                        Poll::Ready(Ok((socket, data))) => {
+                            return Poll::Ready(Ok((socket, data.into_inner())));
                         }
-                        Async::NotReady => {
+                        Poll::Pending => {
                             *self = ReadOneInner::ReadRest(inner);
-                            return Ok(Async::NotReady);
+                            return Poll::Pending;
                         }
                     }
                 }
@@ -311,7 +312,7 @@ pub fn read_one_then<TSocket, TParam, TThen, TOut, TErr>(
     then: TThen,
 ) -> ReadOneThen<TSocket, TParam, TThen>
 where
-    TSocket: AsyncRead,
+    TSocket: AsyncRead + Unpin,
     TThen: FnOnce(Vec<u8>, TParam) -> Result<TOut, TErr>,
     TErr: From<ReadOneError>,
 {
@@ -327,23 +328,26 @@ pub struct ReadOneThen<TSocket, TParam, TThen> {
     then: Option<(TParam, TThen)>,
 }
 
+impl<TSocket, TParam, TThen> Unpin for ReadOneThen<TSocket, TParam, TThen> {
+}
+
 impl<TSocket, TParam, TThen, TOut, TErr> Future for ReadOneThen<TSocket, TParam, TThen>
 where
-    TSocket: AsyncRead,
+    TSocket: AsyncRead + Unpin,
     TThen: FnOnce(Vec<u8>, TParam) -> Result<TOut, TErr>,
     TErr: From<ReadOneError>,
 {
-    type Item = TOut;
-    type Error = TErr;
+    type Output = Result<TOut, TErr>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self.inner.poll()? {
-            Async::Ready(buffer) => {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        match Future::poll(Pin::new(&mut self.inner), cx) {
+            Poll::Ready(Ok(buffer)) => {
                 let (param, then) = self.then.take()
                     .expect("Future was polled after it was finished");
-                Ok(Async::Ready(then(buffer, param)?))
+                Poll::Ready(then(buffer, param))
             },
-            Async::NotReady => Ok(Async::NotReady),
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err.into())),
+            Poll::Pending => Poll::Pending,
         }
     }
 }
@@ -379,22 +383,25 @@ pub struct ReadRespond<TSocket, TParam, TThen> {
     then: Option<(TThen, TParam)>,
 }
 
+impl<TSocket, TParam, TThen> Unpin for ReadRespond<TSocket, TParam, TThen> {
+}
+
 impl<TSocket, TThen, TParam, TOut, TErr> Future for ReadRespond<TSocket, TParam, TThen>
 where
-    TSocket: AsyncRead,
+    TSocket: AsyncRead + Unpin,
     TThen: FnOnce(TSocket, Vec<u8>, TParam) -> Result<TOut, TErr>,
     TErr: From<ReadOneError>,
 {
-    type Item = TOut;
-    type Error = TErr;
+    type Output = Result<TOut, TErr>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self.inner.poll()? {
-            Async::Ready((socket, buffer)) => {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        match Future::poll(Pin::new(&mut self.inner), cx) {
+            Poll::Ready(Ok((socket, buffer))) => {
                 let (then, param) = self.then.take().expect("Future was polled after it was finished");
-                Ok(Async::Ready(then(socket, buffer, param)?))
+                Poll::Ready(Ok(then(socket, buffer, param)?))
             },
-            Async::NotReady => Ok(Async::NotReady),
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err.into())),
+            Poll::Pending => Poll::Pending,
         }
     }
 }
@@ -417,7 +424,7 @@ pub fn request_response<TSocket, TData, TParam, TThen, TOut, TErr>(
     then: TThen,
 ) -> RequestResponse<TSocket, TParam, TThen, TData>
 where
-    TSocket: AsyncRead + AsyncWrite,
+    TSocket: AsyncRead + AsyncWrite + Unpin,
     TData: AsRef<[u8]>,
     TThen: FnOnce(Vec<u8>, TParam) -> Result<TOut, TErr>,
 {
@@ -440,36 +447,38 @@ enum RequestResponseInner<TSocket, TData, TParam, TThen> {
     Poisoned,
 }
 
+impl<TSocket, TParam, TThen, TData> Unpin for RequestResponse<TSocket, TParam, TThen, TData> {
+}
+
 impl<TSocket, TData, TParam, TThen, TOut, TErr> Future for RequestResponse<TSocket, TParam, TThen, TData>
 where
-    TSocket: AsyncRead + AsyncWrite,
+    TSocket: AsyncRead + AsyncWrite + Unpin,
     TData: AsRef<[u8]>,
     TThen: FnOnce(Vec<u8>, TParam) -> Result<TOut, TErr>,
     TErr: From<ReadOneError>,
 {
-    type Item = TOut;
-    type Error = TErr;
+    type Output = Result<TOut, TErr>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         loop {
             match mem::replace(&mut self.inner, RequestResponseInner::Poisoned) {
                 RequestResponseInner::Write(mut inner, max_size, param, then) => {
-                    match inner.poll().map_err(ReadOneError::Io)? {
-                        Async::Ready(socket) => {
+                    match Future::poll(Pin::new(&mut inner), cx).map_err(ReadOneError::Io)? {
+                        Poll::Ready(socket) => {
                             self.inner =
                                 RequestResponseInner::Read(read_one_then(socket, max_size, param, then));
                         }
-                        Async::NotReady => {
+                        Poll::Pending => {
                             self.inner = RequestResponseInner::Write(inner, max_size, param, then);
-                            return Ok(Async::NotReady);
+                            return Poll::Pending;
                         }
                     }
                 }
-                RequestResponseInner::Read(mut inner) => match inner.poll()? {
-                    Async::Ready(packet) => return Ok(Async::Ready(packet)),
-                    Async::NotReady => {
+                RequestResponseInner::Read(mut inner) => match Future::poll(Pin::new(&mut inner), cx)? {
+                    Poll::Ready(packet) => return Poll::Ready(Ok(packet)),
+                    Poll::Pending => {
                         self.inner = RequestResponseInner::Read(inner);
-                        return Ok(Async::NotReady);
+                        return Poll::Pending;
                     }
                 },
                 RequestResponseInner::Poisoned => panic!(),
@@ -482,7 +491,6 @@ where
 mod tests {
     use super::*;
     use std::io::{self, Cursor};
-    use tokio::runtime::current_thread::Runtime;
 
     #[test]
     fn write_one_works() {
@@ -492,7 +500,7 @@ mod tests {
 
         let mut out = vec![0; 10_000];
         let future = write_one(Cursor::new(&mut out[..]), data.clone());
-        Runtime::new().unwrap().block_on(future).unwrap();
+        futures::executor::block_on(future).unwrap();
 
         let (out_len, out_data) = unsigned_varint::decode::usize(&out).unwrap();
         assert_eq!(out_len, data.len());
@@ -516,7 +524,7 @@ mod tests {
             Ok(())
         });
 
-        Runtime::new().unwrap().block_on(future).unwrap();
+        futures::executor::block_on(future).unwrap();
     }
 
     #[test]
@@ -526,7 +534,7 @@ mod tests {
             Ok(())
         });
 
-        Runtime::new().unwrap().block_on(future).unwrap();
+        futures::executor::block_on(future).unwrap();
     }
 
     #[test]
@@ -541,7 +549,7 @@ mod tests {
             Ok(())
         });
 
-        match Runtime::new().unwrap().block_on(future) {
+        match futures::executor::block_on(future) {
             Err(ReadOneError::TooLarge { .. }) => (),
             _ => panic!(),
         }
@@ -554,7 +562,7 @@ mod tests {
             Ok(())
         });
 
-        Runtime::new().unwrap().block_on(future).unwrap();
+        futures::executor::block_on(future).unwrap();
     }
 
     #[test]
@@ -563,7 +571,7 @@ mod tests {
             unreachable!()
         });
 
-        match Runtime::new().unwrap().block_on(future) {
+        match futures::executor::block_on(future) {
             Err(ReadOneError::Io(ref err)) if err.kind() == io::ErrorKind::UnexpectedEof => (),
             _ => panic!()
         }

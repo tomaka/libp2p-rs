@@ -43,7 +43,7 @@ impl<TSubstream> Default for TestHandler<TSubstream> {
 
 impl<TSubstream> ProtocolsHandler for TestHandler<TSubstream>
 where
-    TSubstream: tokio_io::AsyncRead + tokio_io::AsyncWrite
+    TSubstream: futures::AsyncRead + futures::AsyncWrite
 {
     type InEvent = ();      // TODO: cannot be Void (https://github.com/servo/rust-smallvec/issues/139)
     type OutEvent = ();      // TODO: cannot be Void (https://github.com/servo/rust-smallvec/issues/139)
@@ -78,8 +78,8 @@ where
 
     fn connection_keep_alive(&self) -> KeepAlive { KeepAlive::Yes }
 
-    fn poll(&mut self) -> Poll<ProtocolsHandlerEvent<Self::OutboundProtocol, Self::OutboundOpenInfo, Self::OutEvent>, Self::Error> {
-        Ok(Async::NotReady)
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<ProtocolsHandlerEvent<Self::OutboundProtocol, Self::OutboundOpenInfo, Self::OutEvent, Self::Error>, Self::Error> {
+        Poll::Pending
     }
 }
 
@@ -171,7 +171,7 @@ fn raw_swarm_simultaneous_connect() {
             let mut swarm1_dial_start = Delay::new(Instant::now() + Duration::new(0, rand::random::<u32>() % 50_000_000));
             let mut swarm2_dial_start = Delay::new(Instant::now() + Duration::new(0, rand::random::<u32>() % 50_000_000));
 
-            let future = future::poll_fn(|| -> Poll<(), io::Error> {
+            let future = future::poll_fn(|| -> Poll<Result<(), io::Error>> {
                 loop {
                     let mut swarm1_not_ready = false;
                     let mut swarm2_not_ready = false;
@@ -188,7 +188,7 @@ fn raw_swarm_simultaneous_connect() {
                                 swarm1_step = 1;
                                 swarm1_not_ready = false;
                             },
-                            Async::NotReady => swarm1_not_ready = true,
+                            Poll::Pending => swarm1_not_ready = true,
                         }
                     }
 
@@ -201,7 +201,7 @@ fn raw_swarm_simultaneous_connect() {
                                 swarm2_step = 1;
                                 swarm2_not_ready = false;
                             },
-                            Async::NotReady => swarm2_not_ready = true,
+                            Poll::Pending => swarm2_not_ready = true,
                         }
                     }
 
@@ -225,7 +225,7 @@ fn raw_swarm_simultaneous_connect() {
                                 inc.accept(TestHandler::default().into_node_handler_builder());
                             },
                             Async::Ready(_) => unreachable!(),
-                            Async::NotReady => swarm1_not_ready = true,
+                            Poll::Pending => swarm1_not_ready = true,
                         }
                     }
 
@@ -249,7 +249,7 @@ fn raw_swarm_simultaneous_connect() {
                                 inc.accept(TestHandler::default().into_node_handler_builder());
                             },
                             Async::Ready(_) => unreachable!(),
-                            Async::NotReady => swarm2_not_ready = true,
+                            Poll::Pending => swarm2_not_ready = true,
                         }
                     }
 
@@ -259,7 +259,7 @@ fn raw_swarm_simultaneous_connect() {
                     }
 
                     if swarm1_not_ready && swarm2_not_ready {
-                        return Ok(Async::NotReady);
+                        return Poll::Pending;
                     }
                 }
             });

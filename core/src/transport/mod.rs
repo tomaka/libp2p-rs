@@ -30,7 +30,6 @@ use futures::prelude::*;
 use multiaddr::Multiaddr;
 use std::{error, fmt};
 use std::time::Duration;
-use tokio_io::{AsyncRead, AsyncWrite};
 
 pub mod and_then;
 pub mod boxed;
@@ -96,7 +95,7 @@ pub trait Transport {
     /// transport stack. The item must be a [`ListenerUpgrade`](Transport::ListenerUpgrade) future
     /// that resolves to an [`Output`](Transport::Output) value once all protocol upgrades
     /// have been applied.
-    type Listener: Stream<Item = ListenerEvent<Self::ListenerUpgrade>, Error = Self::Error>;
+    type Listener: TryStream<Ok = ListenerEvent<Self::ListenerUpgrade>, Error = Self::Error>;
 
     /// A pending [`Output`](Transport::Output) for an inbound connection,
     /// obtained from the [`Listener`](Transport::Listener) stream.
@@ -107,11 +106,11 @@ pub trait Transport {
     /// connection, hence further connection setup proceeds asynchronously.
     /// Once a `ListenerUpgrade` future resolves it yields the [`Output`](Transport::Output)
     /// of the connection setup process.
-    type ListenerUpgrade: Future<Item = Self::Output, Error = Self::Error>;
+    type ListenerUpgrade: Future<Output = Result<Self::Output, Self::Error>>;
 
     /// A pending [`Output`](Transport::Output) for an outbound connection,
     /// obtained from [dialing](Transport::dial).
-    type Dial: Future<Item = Self::Output, Error = Self::Error>;
+    type Dial: Future<Output = Result<Self::Output, Self::Error>>;
 
     /// Listens on the given [`Multiaddr`], producing a stream of pending, inbound connections
     /// and addresses this transport is listening on (cf. [`ListenerEvent`]).
@@ -194,7 +193,7 @@ pub trait Transport {
     where
         Self: Sized,
         C: FnOnce(Self::Output, ConnectedPoint) -> F + Clone,
-        F: IntoFuture<Item = O>
+        F: Future<Output = O>
     {
         and_then::AndThen::new(self, upgrade)
     }

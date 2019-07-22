@@ -20,34 +20,34 @@
 
 use crate::ConnectedPoint;
 use crate::upgrade::{UpgradeInfo, InboundUpgrade, OutboundUpgrade, UpgradeError, ProtocolName};
-use futures::{future::Either, prelude::*};
+use futures::{prelude::*, future::Either};
+use futures::compat::{Compat01As03, Compat, Future01CompatExt};
 use log::debug;
 use multistream_select::{self, DialerSelectFuture, ListenerSelectFuture};
-use std::mem;
-use tokio_io::{AsyncRead, AsyncWrite};
+use std::{mem, pin::Pin, task::Context, task::Poll};
 
 /// Applies an upgrade to the inbound and outbound direction of a connection or substream.
 pub fn apply<C, U>(conn: C, up: U, cp: ConnectedPoint)
     -> Either<InboundUpgradeApply<C, U>, OutboundUpgradeApply<C, U>>
 where
-    C: AsyncRead + AsyncWrite,
+    C: AsyncRead + AsyncWrite + Unpin,
     U: InboundUpgrade<C> + OutboundUpgrade<C>,
 {
     if cp.is_listener() {
-        Either::A(apply_inbound(conn, up))
+        Either::Left(apply_inbound(conn, up))
     } else {
-        Either::B(apply_outbound(conn, up))
+        Either::Right(apply_outbound(conn, up))
     }
 }
 
 /// Tries to perform an upgrade on an inbound connection or substream.
 pub fn apply_inbound<C, U>(conn: C, up: U) -> InboundUpgradeApply<C, U>
 where
-    C: AsyncRead + AsyncWrite,
+    C: AsyncRead + AsyncWrite + Unpin,
     U: InboundUpgrade<C>,
 {
     let iter = UpgradeInfoIterWrap(up);
-    let future = multistream_select::listener_select_proto(conn, iter);
+    let future = multistream_select::listener_select_proto(Compat::new(conn), iter).compat();
     InboundUpgradeApply {
         inner: InboundUpgradeApplyState::Init { future }
     }
@@ -56,11 +56,11 @@ where
 /// Tries to perform an upgrade on an outbound connection or substream.
 pub fn apply_outbound<C, U>(conn: C, up: U) -> OutboundUpgradeApply<C, U>
 where
-    C: AsyncRead + AsyncWrite,
+    C: AsyncRead + AsyncWrite + Unpin,
     U: OutboundUpgrade<C>
 {
     let iter = up.protocol_info().into_iter().map(NameWrap as fn(_) -> NameWrap<_>);
-    let future = multistream_select::dialer_select_proto(conn, iter);
+    let future = multistream_select::dialer_select_proto(Compat::new(conn), iter).compat();
     OutboundUpgradeApply {
         inner: OutboundUpgradeApplyState::Init { future, upgrade: up }
     }
@@ -69,7 +69,7 @@ where
 /// Future returned by `apply_inbound`. Drives the upgrade process.
 pub struct InboundUpgradeApply<C, U>
 where
-    C: AsyncRead + AsyncWrite,
+    C: AsyncRead + AsyncWrite + Unpin,
     U: InboundUpgrade<C>
 {
     inner: InboundUpgradeApplyState<C, U>
@@ -77,11 +77,11 @@ where
 
 enum InboundUpgradeApplyState<C, U>
 where
-    C: AsyncRead + AsyncWrite,
+    C: AsyncRead + AsyncWrite + Unpin,
     U: InboundUpgrade<C>
 {
     Init {
-        future: ListenerSelectFuture<C, UpgradeInfoIterWrap<U>, NameWrap<U::Info>>,
+        future: Compat01As03<ListenerSelectFuture<Compat<C>, UpgradeInfoIterWrap<U>, NameWrap<U::Info>>>,
     },
     Upgrade {
         future: U::Future
@@ -89,42 +89,49 @@ where
     Undefined
 }
 
-impl<C, U> Future for InboundUpgradeApply<C, U>
+impl<C, U> Unpin for InboundUpgradeApply<C, U>
 where
-    C: AsyncRead + AsyncWrite,
+    C: AsyncRead + AsyncWrite + Unpin,
     U: InboundUpgrade<C>,
 {
-    type Item = U::Output;
-    type Error = UpgradeError<U::Error>;
+}
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+impl<C, U> Future for InboundUpgradeApply<C, U>
+where
+    C: AsyncRead + AsyncWrite + Unpin,
+    U: InboundUpgrade<C>,
+    U::Future: Unpin,
+{
+    type Output = Result<U::Output, UpgradeError<U::Error>>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         loop {
             match mem::replace(&mut self.inner, InboundUpgradeApplyState::Undefined) {
                 InboundUpgradeApplyState::Init { mut future } => {
-                    let (info, connection, upgrade) = match future.poll()? {
-                        Async::Ready(x) => x,
-                        Async::NotReady => {
+                    let (info, connection, upgrade) = match Future::poll(Pin::new(&mut future), cx)? {
+                        Poll::Ready(x) => x,
+                        Poll::Pending => {
                             self.inner = InboundUpgradeApplyState::Init { future };
-                            return Ok(Async::NotReady)
+                            return Poll::Pending
                         }
                     };
                     self.inner = InboundUpgradeApplyState::Upgrade {
-                        future: upgrade.0.upgrade_inbound(connection, info.0)
+                        future: upgrade.0.upgrade_inbound(Compat01As03::new(connection), info.0)
                     };
                 }
                 InboundUpgradeApplyState::Upgrade { mut future } => {
-                    match future.poll() {
-                        Ok(Async::NotReady) => {
+                    match Future::poll(Pin::new(&mut future), cx) {
+                        Poll::Pending => {
                             self.inner = InboundUpgradeApplyState::Upgrade { future };
-                            return Ok(Async::NotReady)
+                            return Poll::Pending
                         }
-                        Ok(Async::Ready(x)) => {
+                        Poll::Ready(Ok(x)) => {
                             debug!("Successfully applied negotiated protocol");
-                            return Ok(Async::Ready(x))
+                            return Poll::Ready(Ok(x))
                         }
-                        Err(e) => {
+                        Poll::Ready(Err(e)) => {
                             debug!("Failed to apply negotiated protocol");
-                            return Err(UpgradeError::Apply(e))
+                            return Poll::Ready(Err(UpgradeError::Apply(e)))
                         }
                     }
                 }
@@ -138,7 +145,7 @@ where
 /// Future returned by `apply_outbound`. Drives the upgrade process.
 pub struct OutboundUpgradeApply<C, U>
 where
-    C: AsyncRead + AsyncWrite,
+    C: AsyncRead + AsyncWrite + Unpin,
     U: OutboundUpgrade<C>
 {
     inner: OutboundUpgradeApplyState<C, U>
@@ -146,11 +153,11 @@ where
 
 enum OutboundUpgradeApplyState<C, U>
 where
-    C: AsyncRead + AsyncWrite,
+    C: AsyncRead + AsyncWrite + Unpin,
     U: OutboundUpgrade<C>
 {
     Init {
-        future: DialerSelectFuture<C, NameWrapIter<<U::InfoIter as IntoIterator>::IntoIter>>,
+        future: Compat01As03<DialerSelectFuture<Compat<C>, NameWrapIter<<U::InfoIter as IntoIterator>::IntoIter>>>,
         upgrade: U
     },
     Upgrade {
@@ -159,42 +166,49 @@ where
     Undefined
 }
 
+impl<C, U> Unpin for OutboundUpgradeApply<C, U>
+where
+    C: AsyncRead + AsyncWrite + Unpin,
+    U: OutboundUpgrade<C>,
+{
+}
+
 impl<C, U> Future for OutboundUpgradeApply<C, U>
 where
-    C: AsyncRead + AsyncWrite,
-    U: OutboundUpgrade<C>
+    C: AsyncRead + AsyncWrite + Unpin,
+    U: OutboundUpgrade<C>,
+    U::Future: Unpin,
 {
-    type Item = U::Output;
-    type Error = UpgradeError<U::Error>;
+    type Output = Result<U::Output, UpgradeError<U::Error>>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         loop {
             match mem::replace(&mut self.inner, OutboundUpgradeApplyState::Undefined) {
                 OutboundUpgradeApplyState::Init { mut future, upgrade } => {
-                    let (info, connection) = match future.poll()? {
-                        Async::Ready(x) => x,
-                        Async::NotReady => {
+                    let (info, connection) = match Future::poll(Pin::new(&mut future), cx)? {
+                        Poll::Ready(x) => x,
+                        Poll::Pending => {
                             self.inner = OutboundUpgradeApplyState::Init { future, upgrade };
-                            return Ok(Async::NotReady)
+                            return Poll::Pending
                         }
                     };
                     self.inner = OutboundUpgradeApplyState::Upgrade {
-                        future: upgrade.upgrade_outbound(connection, info.0)
+                        future: upgrade.upgrade_outbound(Compat01As03::new(connection), info.0)
                     };
                 }
                 OutboundUpgradeApplyState::Upgrade { mut future } => {
-                    match future.poll() {
-                        Ok(Async::NotReady) => {
+                    match Future::poll(Pin::new(&mut future), cx) {
+                        Poll::Pending => {
                             self.inner = OutboundUpgradeApplyState::Upgrade { future };
-                            return Ok(Async::NotReady)
+                            return Poll::Pending
                         }
-                        Ok(Async::Ready(x)) => {
+                        Poll::Ready(Ok(x)) => {
                             debug!("Successfully applied negotiated protocol");
-                            return Ok(Async::Ready(x))
+                            return Poll::Ready(Ok(x))
                         }
-                        Err(e) => {
+                        Poll::Ready(Err(e)) => {
                             debug!("Failed to apply negotiated protocol");
-                            return Err(UpgradeError::Apply(e))
+                            return Poll::Ready(Err(UpgradeError::Apply(e)));
                         }
                     }
                 }

@@ -21,10 +21,9 @@
 //! Manage listening on multiple multiaddresses at once.
 
 use crate::{Multiaddr, Transport, transport::{TransportError, ListenerEvent}};
-use futures::prelude::*;
+use futures::{prelude::*, task::Context, task::Poll};
 use smallvec::SmallVec;
-use std::{collections::VecDeque, fmt};
-use void::Void;
+use std::{collections::VecDeque, fmt, pin::Pin};
 
 /// Implementation of `futures::Stream` that allows listening on multiaddresses.
 ///
@@ -127,7 +126,7 @@ where
         /// The listener that closed.
         listener: TTrans::Listener,
         /// The error that happened. `Ok` if gracefully closed.
-        result: Result<(), <TTrans::Listener as Stream>::Error>,
+        result: Result<(), <TTrans::Listener as TryStream>::Error>,
     },
 }
 
@@ -176,50 +175,53 @@ where
         self.listeners.iter().flat_map(|l| l.addresses.iter())
     }
 
-    /// Provides an API similar to `Stream`, except that it cannot error.
-    pub fn poll(&mut self) -> Async<ListenersEvent<TTrans>> {
+    /// Provides an API similar to `Stream`, except that it cannot end.
+    pub fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<ListenersEvent<TTrans>>
+    where
+        TTrans::Listener: Unpin,
+    {
         // We remove each element from `listeners` one by one and add them back.
         let mut remaining = self.listeners.len();
         while let Some(mut listener) = self.listeners.pop_back() {
-            match listener.listener.poll() {
-                Ok(Async::NotReady) => {
+            match TryStream::try_poll_next(Pin::new(&mut listener.listener), cx) {
+                Poll::Pending => {
                     self.listeners.push_front(listener);
                     remaining -= 1;
                     if remaining == 0 { break }
                 }
-                Ok(Async::Ready(Some(ListenerEvent::Upgrade { upgrade, listen_addr, remote_addr }))) => {
+                Poll::Ready(Some(Ok(ListenerEvent::Upgrade { upgrade, listen_addr, remote_addr }))) => {
                     debug_assert!(listener.addresses.contains(&listen_addr),
                         "Transport reported listen address {} not in the list: {:?}",
                         listen_addr, listener.addresses);
                     self.listeners.push_front(listener);
-                    return Async::Ready(ListenersEvent::Incoming {
+                    return Poll::Ready(ListenersEvent::Incoming {
                         upgrade,
                         listen_addr,
                         send_back_addr: remote_addr
                     })
                 }
-                Ok(Async::Ready(Some(ListenerEvent::NewAddress(a)))) => {
+                Poll::Ready(Some(Ok(ListenerEvent::NewAddress(a)))) => {
                     debug_assert!(!listener.addresses.contains(&a),
                         "Transport has reported address {} multiple times", a);
                     if !listener.addresses.contains(&a) {
                         listener.addresses.push(a.clone());
                     }
                     self.listeners.push_front(listener);
-                    return Async::Ready(ListenersEvent::NewAddress { listen_addr: a })
+                    return Poll::Ready(ListenersEvent::NewAddress { listen_addr: a })
                 }
-                Ok(Async::Ready(Some(ListenerEvent::AddressExpired(a)))) => {
+                Poll::Ready(Some(Ok(ListenerEvent::AddressExpired(a)))) => {
                     listener.addresses.retain(|x| x != &a);
                     self.listeners.push_front(listener);
-                    return Async::Ready(ListenersEvent::AddressExpired { listen_addr: a })
+                    return Poll::Ready(ListenersEvent::AddressExpired { listen_addr: a })
                 }
-                Ok(Async::Ready(None)) => {
-                    return Async::Ready(ListenersEvent::Closed {
+                Poll::Ready(None) => {
+                    return Poll::Ready(ListenersEvent::Closed {
                         listener: listener.listener,
                         result: Ok(()),
                     })
                 }
-                Err(err) => {
-                    return Async::Ready(ListenersEvent::Closed {
+                Poll::Ready(Some(Err(err))) => {
+                    return Poll::Ready(ListenersEvent::Closed {
                         listener: listener.listener,
                         result: Err(err),
                     })
@@ -228,21 +230,29 @@ where
         }
 
         // We register the current task to be woken up if a new listener is added.
-        Async::NotReady
+        Poll::Pending
     }
 }
 
 impl<TTrans> Stream for ListenersStream<TTrans>
 where
     TTrans: Transport,
+    TTrans::Listener: Unpin,
 {
     type Item = ListenersEvent<TTrans>;
-    type Error = Void; // TODO: use ! once stable
 
-    #[inline]
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        Ok(self.poll().map(Option::Some))
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        match ListenersStream::poll(self, cx) {
+            Poll::Ready(item) => Poll::Ready(Some(item)),
+            Poll::Pending => Poll::Pending,
+        }
     }
+}
+
+impl<TTrans> Unpin for ListenersStream<TTrans>
+where
+    TTrans: Transport,
+{
 }
 
 impl<TTrans> fmt::Debug for ListenersStream<TTrans>
@@ -260,7 +270,7 @@ where
 impl<TTrans> fmt::Debug for ListenersEvent<TTrans>
 where
     TTrans: Transport,
-    <TTrans::Listener as Stream>::Error: fmt::Debug,
+    <TTrans::Listener as TryStream>::Error: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
@@ -301,11 +311,11 @@ mod tests {
             ListenerState::Error =>
                 Box::new(stream::poll_fn(|| Err(io::Error::new(io::ErrorKind::Other, "oh noes")))),
             ListenerState::Ok(state) => match state {
-                Async::NotReady => Box::new(stream::poll_fn(|| Ok(Async::NotReady))),
-                Async::Ready(Some(event)) => Box::new(stream::poll_fn(move || {
-                    Ok(Async::Ready(Some(event.clone().map(future::ok))))
+                Poll::Pending => Box::new(stream::poll_fn(|| Poll::Pending)),
+                Poll::Ready(Some(event)) => Box::new(stream::poll_fn(move || {
+                    Ok(Poll::Ready(Some(event.clone().map(future::ok))))
                 })),
-                Async::Ready(None) => Box::new(stream::empty())
+                Poll::Ready(None) => Box::new(stream::empty())
             }
             ListenerState::Events(events) =>
                 Box::new(stream::iter_ok(events.into_iter().map(|e| e.map(future::ok))))
@@ -384,7 +394,7 @@ mod tests {
     fn listener_stream_poll_without_listeners_is_not_ready() {
         let t = DummyTransport::new();
         let mut ls = ListenersStream::new(t);
-        assert_matches!(ls.poll(), Async::NotReady);
+        assert_matches!(ls.poll(), Poll::Pending);
     }
 
     #[test]
@@ -393,8 +403,8 @@ mod tests {
         let addr = tcp4([127, 0, 0, 1], 1234);
         let mut ls = ListenersStream::new(t);
         ls.listen_on(addr).expect("listen_on failed");
-        set_listener_state(&mut ls, 0, ListenerState::Ok(Async::NotReady));
-        assert_matches!(ls.poll(), Async::NotReady);
+        set_listener_state(&mut ls, 0, ListenerState::Poll::Pending);
+        assert_matches!(ls.poll(), Poll::Pending);
         assert_eq!(ls.listeners.len(), 1); // listener is still there
     }
 
@@ -453,7 +463,7 @@ mod tests {
             })
         });
 
-        set_listener_state(&mut ls, 1, ListenerState::Ok(Async::NotReady));
+        set_listener_state(&mut ls, 1, ListenerState::Poll::Pending);
 
         assert_matches!(ls.by_ref().wait().next(), Some(Ok(listeners_event)) => {
             assert_matches!(listeners_event, ListenersEvent::Incoming { upgrade, .. } => {
@@ -470,7 +480,7 @@ mod tests {
         let addr = tcp4([127, 0, 0, 1], 1234);
         let mut ls = ListenersStream::new(t);
         ls.listen_on(addr).expect("listen_on failed");
-        set_listener_state(&mut ls, 0, ListenerState::Ok(Async::Ready(None)));
+        set_listener_state(&mut ls, 0, ListenerState::Ok(Poll::Ready(None)));
         assert_matches!(ls.by_ref().wait().next(), Some(Ok(listeners_event)) => {
             assert_matches!(listeners_event, ListenersEvent::Closed{..})
         });
@@ -487,7 +497,7 @@ mod tests {
             listen_addr: tcp4([127, 0, 0, 1], 1234),
             remote_addr: tcp4([127, 0, 0, 1], 32000)
         };
-        t.set_initial_listener_state(ListenerState::Ok(Async::Ready(Some(event))));
+        t.set_initial_listener_state(ListenerState::Ok(Poll::Ready(Some(event))));
         let addr = tcp4([127, 0, 0, 1], 1234);
         let mut ls = ListenersStream::new(t);
         ls.listen_on(addr).expect("listen_on failed");
