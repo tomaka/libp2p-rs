@@ -1,0 +1,8 @@
+syntax = "proto2";
+
+import "core/keys.proto";
+
+message Exchange {
+  optional bytes id = 1;
+  optional PublicKey pubkey = 2;
+}
