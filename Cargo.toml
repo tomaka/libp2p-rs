@@ -39,7 +39,7 @@ tokio-executor = "0.1"
 tokio-io = "0.1"
 wasm-timer = "0.1"
 
-[target.'cfg(not(any(target_os = "emscripten", target_os = "unknown")))'.dependencies]
+[target.'cfg(not(any(target_os = "emscripten", target_os = "unknown", target_os = "wasi")))'.dependencies]
 libp2p-deflate = { version = "0.4.0", path = "protocols/deflate" }
 libp2p-dns = { version = "0.12.0", path = "transports/dns" }
 libp2p-mdns = { version = "0.12.0", path = "misc/mdns" }
