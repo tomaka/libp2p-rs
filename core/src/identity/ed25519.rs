@@ -32,7 +32,7 @@ pub struct Keypair(ed25519::Keypair);
 impl Keypair {
     /// Generate a new Ed25519 keypair.
     pub fn generate() -> Keypair {
-        let mut bytes = [0u8; 32];
+        let mut bytes = [0u8; 64];
         rand::thread_rng().fill_bytes(&mut bytes);
         Keypair(ed25519::Keypair::from_bytes(&bytes).unwrap())
     }
