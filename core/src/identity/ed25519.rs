@@ -22,6 +22,7 @@
 
 use ed25519_dalek as ed25519;
 use failure::Fail;
+use rand::RngCore;
 use super::error::DecodingError;
 use zeroize::Zeroize;
 
@@ -31,7 +32,7 @@ pub struct Keypair(ed25519::Keypair);
 impl Keypair {
     /// Generate a new Ed25519 keypair.
     pub fn generate() -> Keypair {
-        Keypair(ed25519::Keypair::generate(&mut rand::thread_rng()))
+        Keypair::from(SecretKey::generate())
     }
 
     /// Encode the keypair into a byte array by concatenating the bytes
@@ -138,7 +139,9 @@ impl Clone for SecretKey {
 impl SecretKey {
     /// Generate a new Ed25519 secret key.
     pub fn generate() -> SecretKey {
-        SecretKey(ed25519::SecretKey::generate(&mut rand::thread_rng()))
+        let mut bytes = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut bytes);
+        SecretKey(ed25519::SecretKey::from_bytes(&bytes).unwrap())
     }
 
     /// Create an Ed25519 secret key from a byte slice, zeroing the input on success.

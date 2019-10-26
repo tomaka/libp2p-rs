@@ -24,7 +24,7 @@
 //! helps you with.
 
 use crate::error::SecioError;
-#[cfg(not(any(target_os = "emscripten", target_os = "unknown")))]
+#[cfg(not(any(target_os = "emscripten", target_os = "unknown", target_os = "wasi")))]
 use ring::digest;
 use std::cmp::Ordering;
 use crate::stream_cipher::Cipher;
@@ -204,7 +204,7 @@ pub fn select_digest(r: Ordering, ours: &str, theirs: &str) -> Result<Digest, Se
     Err(SecioError::NoSupportIntersection)
 }
 
-#[cfg(not(any(target_os = "emscripten", target_os = "unknown")))]
+#[cfg(not(any(target_os = "emscripten", target_os = "unknown", target_os = "wasi")))]
 impl Into<&'static digest::Algorithm> for Digest {
     #[inline]
     fn into(self) -> &'static digest::Algorithm {

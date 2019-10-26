@@ -163,10 +163,10 @@ pub use tokio_codec;
 
 #[doc(inline)]
 pub use libp2p_core as core;
-#[cfg(not(any(target_os = "emscripten", target_os = "unknown")))]
+#[cfg(not(any(target_os = "emscripten", target_os = "unknown", target_os = "wasi")))]
 #[doc(inline)]
 pub use libp2p_deflate as deflate;
-#[cfg(not(any(target_os = "emscripten", target_os = "unknown")))]
+#[cfg(not(any(target_os = "emscripten", target_os = "unknown", target_os = "wasi")))]
 #[doc(inline)]
 pub use libp2p_dns as dns;
 #[doc(inline)]
@@ -177,10 +177,10 @@ pub use libp2p_kad as kad;
 pub use libp2p_floodsub as floodsub;
 #[doc(inline)]
 pub use libp2p_mplex as mplex;
-#[cfg(not(any(target_os = "emscripten", target_os = "unknown")))]
+#[cfg(not(any(target_os = "emscripten", target_os = "unknown", target_os = "wasi")))]
 #[doc(inline)]
 pub use libp2p_mdns as mdns;
-#[cfg(not(any(target_os = "emscripten", target_os = "unknown")))]
+#[cfg(not(any(target_os = "emscripten", target_os = "unknown", target_os = "wasi")))]
 #[doc(inline)]
 pub use libp2p_noise as noise;
 #[doc(inline)]
@@ -191,7 +191,7 @@ pub use libp2p_plaintext as plaintext;
 pub use libp2p_secio as secio;
 #[doc(inline)]
 pub use libp2p_swarm as swarm;
-#[cfg(not(any(target_os = "emscripten", target_os = "unknown")))]
+#[cfg(not(any(target_os = "emscripten", target_os = "unknown", target_os = "wasi")))]
 #[doc(inline)]
 pub use libp2p_tcp as tcp;
 #[doc(inline)]
@@ -265,7 +265,7 @@ struct CommonTransport {
 type InnerImplementation = core::transport::OrTransport<dns::DnsConfig<tcp::TcpConfig>, websocket::WsConfig<dns::DnsConfig<tcp::TcpConfig>>>;
 #[cfg(all(not(any(target_os = "emscripten", target_os = "unknown")), not(feature = "libp2p-websocket")))]
 type InnerImplementation = dns::DnsConfig<tcp::TcpConfig>;
-#[cfg(any(target_os = "emscripten", target_os = "unknown"))]
+#[cfg(any(target_os = "emscripten", target_os = "unknown", target_os = "wasi"))]
 type InnerImplementation = core::transport::dummy::DummyTransport;
 
 #[derive(Debug, Clone)]
@@ -275,7 +275,7 @@ struct CommonTransportInner {
 
 impl CommonTransport {
     /// Initializes the `CommonTransport`.
-    #[cfg(not(any(target_os = "emscripten", target_os = "unknown")))]
+    #[cfg(not(any(target_os = "emscripten", target_os = "unknown", target_os = "wasi")))]
     pub fn new() -> CommonTransport {
         let tcp = tcp::TcpConfig::new().nodelay(true);
         let transport = dns::DnsConfig::new(tcp);
@@ -291,7 +291,7 @@ impl CommonTransport {
     }
 
     /// Initializes the `CommonTransport`.
-    #[cfg(any(target_os = "emscripten", target_os = "unknown"))]
+    #[cfg(any(target_os = "emscripten", target_os = "unknown", target_os = "wasi"))]
     pub fn new() -> CommonTransport {
         let inner = core::transport::dummy::DummyTransport::new();
         CommonTransport {
