@@ -28,6 +28,7 @@ use crate::{
 };
 use fnv::FnvHashMap;
 use futures::{prelude::*, future::Executor, sync::mpsc};
+use futures_diagnose_exec::Future01Ext as _;
 use smallvec::SmallVec;
 use std::{collections::hash_map::{Entry, OccupiedEntry}, error, fmt};
 use super::{TaskId, task::{Task, FromTaskMessage, ToTaskMessage}, Error};
@@ -291,7 +292,7 @@ impl<I, O, H, E, HE, T, C> Manager<I, O, H, E, HE, T, C> {
             // no executor is available. This makes it possible to use the core in environments
             // outside of tokio.
             let executor = tokio_executor::DefaultExecutor::current();
-            if let Err(err) = executor.execute(to_spawn) {
+            if let Err(err) = executor.execute(to_spawn.with_diagnostics("node-bg")) {
                 self.local_spawns.push(err.into_future())
             }
         }
