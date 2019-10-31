@@ -1350,6 +1350,9 @@ where
         loop {
             // Drain queued events first.
             if let Some(event) = self.queued_events.pop_front() {
+                if now.elapsed() > std::time::Duration::from_millis(500) {
+                    println!("kademlia took {:?}", now.elapsed());
+                }
                 return Async::Ready(event);
             }
 
@@ -1361,6 +1364,9 @@ where
                     addresses: value,
                     old_peer: entry.evicted.map(|n| n.key.into_preimage())
                 };
+                if now.elapsed() > std::time::Duration::from_millis(500) {
+                    println!("kademlia took {:?}", now.elapsed());
+                }
                 return Async::Ready(NetworkBehaviourAction::GenerateEvent(event))
             }
 
@@ -1369,11 +1375,17 @@ where
                 match self.queries.poll(now) {
                     QueryPoolState::Finished(q) => {
                         if let Some(event) = self.query_finished(q, parameters) {
+                if now.elapsed() > std::time::Duration::from_millis(500) {
+                    println!("kademlia took {:?}", now.elapsed());
+                }
                             return Async::Ready(NetworkBehaviourAction::GenerateEvent(event))
                         }
                     }
                     QueryPoolState::Timeout(q) => {
                         if let Some(event) = self.query_timeout(q) {
+                if now.elapsed() > std::time::Duration::from_millis(500) {
+                    println!("kademlia took {:?}", now.elapsed());
+                }
                             return Async::Ready(NetworkBehaviourAction::GenerateEvent(event))
                         }
                     }
@@ -1406,6 +1418,9 @@ where
             // If no new events have been queued either, signal `NotReady` to
             // be polled again later.
             if self.queued_events.is_empty() {
+                if now.elapsed() > std::time::Duration::from_millis(500) {
+                    println!("kademlia took {:?}", now.elapsed());
+                }
                 return Async::NotReady
             }
         }

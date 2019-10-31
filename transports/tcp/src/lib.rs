@@ -475,15 +475,24 @@ impl Stream for TcpListenStream {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, io::Error> {
+		let before = std::time::Instant::now();
         loop {
             if let Some(event) = self.pending.pop_front() {
+                if before.elapsed() > std::time::Duration::from_millis(500) {
+                    println!("TcpListener polling took {:?}", before.elapsed());
+                }
                 return Ok(Async::Ready(Some(event)))
             }
 
             let sock = match self.inner.poll() {
                 Ok(Async::Ready(Some(sock))) => sock,
                 Ok(Async::Ready(None)) => return Ok(Async::Ready(None)),
-                Ok(Async::NotReady) => return Ok(Async::NotReady),
+                Ok(Async::NotReady) => {
+                    if before.elapsed() > std::time::Duration::from_millis(500) {
+                        println!("TcpListener polling took {:?}", before.elapsed());
+                    }
+                    return Ok(Async::NotReady)
+                },
                 Err(e) => return Err(e)
             };
 
