@@ -18,8 +18,20 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+<<<<<<< HEAD
 use futures::future::{self, Ready};
 use libp2p_core::{InboundUpgrade, OutboundUpgrade, UpgradeInfo, upgrade::Negotiated};
+=======
+use bytes::BytesMut;
+use futures::{Future, StartSend, Poll, future};
+use futures::sink::Sink;
+use futures::stream::MapErr as StreamMapErr;
+use futures::stream::Stream;
+use libp2p_core::{identity, InboundUpgrade, OutboundUpgrade, UpgradeInfo, upgrade::Negotiated, PeerId, PublicKey};
+use log::debug;
+use rw_stream_sink::RwStreamSink;
+use std::io;
+>>>>>>> upstream/master
 use std::iter;
 use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_io::codec::length_delimited::Framed;
@@ -27,11 +39,44 @@ use crate::error::PlainTextError;
 use void::Void;
 use futures::future::FutureResult;
 use crate::handshake::Remote;
+<<<<<<< HEAD
+
+mod error;
+mod handshake;
+mod pb;
+=======
+>>>>>>> upstream/master
 
 mod error;
 mod handshake;
 mod pb;
 
+/// `PlainText1Config` is an insecure connection handshake for testing purposes only.
+///
+/// > **Note**: Given that `PlainText1Config` has no notion of exchanging peer identity information it is not compatible
+/// > with the `libp2p_core::transport::upgrade::Builder` pattern. See
+/// > [`PlainText2Config`](struct.PlainText2Config.html) if compatibility is needed. Even though not compatible with the
+/// > Builder pattern one can still do an upgrade *manually*:
+///
+/// ```
+/// # use libp2p_core::transport::{ Transport, memory::MemoryTransport };
+/// # use libp2p_plaintext::PlainText1Config;
+/// #
+/// MemoryTransport::default()
+///   .and_then(move |io, endpoint| {
+///     libp2p_core::upgrade::apply(
+///       io,
+///       PlainText1Config{},
+///       endpoint,
+///       libp2p_core::transport::upgrade::Version::V1,
+///     )
+///   })
+///   .map(|plaintext, _endpoint| {
+///     unimplemented!();
+///     // let peer_id = somehow_derive_peer_id();
+///     // return (peer_id, plaintext);
+///   });
+/// ```
 #[derive(Debug, Copy, Clone)]
 pub struct PlainText1Config;
 
@@ -147,6 +192,94 @@ where
     }
 }
 
+<<<<<<< HEAD
+=======
+/// `PlainText2Config` is an insecure connection handshake for testing purposes only, implementing
+/// the libp2p plaintext connection handshake specification.
+#[derive(Clone)]
+pub struct PlainText2Config {
+    pub local_public_key: identity::PublicKey,
+}
+
+impl UpgradeInfo for PlainText2Config {
+    type Info = &'static [u8];
+    type InfoIter = iter::Once<Self::Info>;
+
+    fn protocol_info(&self) -> Self::InfoIter {
+        iter::once(b"/plaintext/2.0.0")
+    }
+}
+
+impl<C> InboundUpgrade<C> for PlainText2Config
+where
+    C: AsyncRead + AsyncWrite + Send + 'static
+{
+    type Output = (PeerId, PlainTextOutput<Negotiated<C>>);
+    type Error = PlainTextError;
+    type Future = Box<dyn Future<Item = Self::Output, Error = Self::Error> + Send>;
+
+    fn upgrade_inbound(self, socket: Negotiated<C>, _: Self::Info) -> Self::Future {
+        Box::new(self.handshake(socket))
+    }
+}
+
+impl<C> OutboundUpgrade<C> for PlainText2Config
+where
+    C: AsyncRead + AsyncWrite + Send + 'static
+{
+    type Output = (PeerId, PlainTextOutput<Negotiated<C>>);
+    type Error = PlainTextError;
+    type Future = Box<dyn Future<Item = Self::Output, Error = Self::Error> + Send>;
+
+    fn upgrade_outbound(self, socket: Negotiated<C>, _: Self::Info) -> Self::Future {
+        Box::new(self.handshake(socket))
+    }
+}
+
+impl PlainText2Config {
+    fn handshake<T>(self, socket: T) -> impl Future<Item = (PeerId, PlainTextOutput<T>), Error = PlainTextError>
+    where
+        T: AsyncRead + AsyncWrite + Send + 'static
+    {
+        debug!("Starting plaintext upgrade");
+        PlainTextMiddleware::handshake(socket, self)
+            .map(|(stream_sink, remote)| {
+                let mapped = stream_sink.map_err(map_err as fn(_) -> _);
+                (
+                    remote.peer_id,
+                    PlainTextOutput {
+                        stream: RwStreamSink::new(mapped),
+                        remote_key: remote.public_key,
+                    }
+                )
+            })
+    }
+}
+
+#[inline]
+fn map_err(err: io::Error) -> io::Error {
+    debug!("error during plaintext handshake {:?}", err);
+    io::Error::new(io::ErrorKind::InvalidData, err)
+}
+
+pub struct PlainTextMiddleware<S> {
+    inner: Framed<S, BytesMut>,
+}
+
+impl<S> PlainTextMiddleware<S>
+where
+    S: AsyncRead + AsyncWrite + Send,
+{
+    fn handshake(socket: S, config: PlainText2Config)
+        -> impl Future<Item = (PlainTextMiddleware<S>, Remote), Error = PlainTextError>
+    {
+        handshake::handshake(socket, config).map(|(inner, remote)| {
+            (PlainTextMiddleware { inner }, remote)
+        })
+    }
+}
+
+>>>>>>> upstream/master
 impl<S> Sink for PlainTextMiddleware<S>
 where
     S: AsyncRead + AsyncWrite,

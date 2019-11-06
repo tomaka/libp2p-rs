@@ -26,7 +26,13 @@ use futures::{ready, Poll};
 use futures::prelude::*;
 use log::{debug, trace};
 use snow;
+<<<<<<< HEAD
 use std::{fmt, io, pin::Pin, ops::DerefMut, task::Context};
+=======
+use snow::error::{StateProblem, Error as SnowError};
+use std::{fmt, io};
+use tokio_io::{AsyncRead, AsyncWrite};
+>>>>>>> upstream/master
 
 const MAX_NOISE_PKG_LEN: usize = 65535;
 const MAX_WRITE_BUF_LEN: usize = 16384;
@@ -62,14 +68,22 @@ pub(crate) enum SnowState {
 }
 
 impl SnowState {
+<<<<<<< HEAD
     pub fn read_message(&mut self, message: &[u8], payload: &mut [u8]) -> Result<usize, snow::Error> {
+=======
+    pub fn read_message(&mut self, message: &[u8], payload: &mut [u8]) -> Result<usize, SnowError> {
+>>>>>>> upstream/master
         match self {
             SnowState::Handshake(session) => session.read_message(message, payload),
             SnowState::Transport(session) => session.read_message(message, payload),
         }
     }
 
+<<<<<<< HEAD
     pub fn write_message(&mut self, message: &[u8], payload: &mut [u8]) -> Result<usize, snow::Error> {
+=======
+    pub fn write_message(&mut self, message: &[u8], payload: &mut [u8]) -> Result<usize, SnowError> {
+>>>>>>> upstream/master
         match self {
             SnowState::Handshake(session) => session.write_message(message, payload),
             SnowState::Transport(session) => session.write_message(message, payload),
@@ -83,10 +97,17 @@ impl SnowState {
         }
     }
 
+<<<<<<< HEAD
     pub fn into_transport_mode(self) -> Result<snow::TransportState, snow::Error> {
         match self {
             SnowState::Handshake(session) => session.into_transport_mode(),
             SnowState::Transport(_) => Err(snow::Error::State(snow::error::StateProblem::HandshakeAlreadyFinished)),
+=======
+    pub fn into_transport_mode(self) -> Result<snow::TransportState, SnowError> {
+        match self {
+            SnowState::Handshake(session) => session.into_transport_mode(),
+            SnowState::Transport(_) => Err(SnowError::State(StateProblem::HandshakeAlreadyFinished)),
+>>>>>>> upstream/master
         }
     }
 }
@@ -114,7 +135,11 @@ impl<T> fmt::Debug for NoiseOutput<T> {
 impl<T> NoiseOutput<T> {
     fn new(io: T, session: SnowState) -> Self {
         NoiseOutput {
+<<<<<<< HEAD
             io,
+=======
+            io, 
+>>>>>>> upstream/master
             session,
             buffer: Buffer { inner: Box::new([0; TOTAL_BUFFER_LEN]) },
             read_state: ReadState::Init,

@@ -34,9 +34,15 @@ use libp2p_swarm::{
     ProtocolsHandlerUpgrErr
 };
 use smallvec::SmallVec;
+<<<<<<< HEAD
 use std::{marker::PhantomData, pin::Pin, task::Context, task::Poll, time::Duration};
 use wasm_timer::Delay;
 use void::Void;
+=======
+use std::{io, marker::PhantomData, time::Duration};
+use tokio_io::{AsyncRead, AsyncWrite};
+use wasm_timer::{Delay, Instant};
+>>>>>>> upstream/master
 
 /// Delay between the moment we connect and the first time we identify.
 const DELAY_TO_FIRST_ID: Duration = Duration::from_millis(500);
@@ -95,7 +101,7 @@ impl<TSubstream> ProtocolsHandler for IdentifyHandler<TSubstream>
 where
     TSubstream: AsyncRead + AsyncWrite + Unpin + 'static,
 {
-    type InEvent = Void;
+    type InEvent = ();
     type OutEvent = IdentifyHandlerEvent<TSubstream>;
     type Error = ReadOneError;
     type Substream = TSubstream;

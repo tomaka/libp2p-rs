@@ -33,7 +33,77 @@ use sha2::{Digest as ShaDigestTrait, Sha256};
 use std::cmp::{self, Ordering};
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use crate::structs_proto::{Exchange, Propose};
+<<<<<<< HEAD
 use crate::SecioConfig;
+=======
+use tokio_io::{AsyncRead, AsyncWrite, codec::length_delimited};
+use crate::{KeyAgreement, SecioConfig};
+
+// This struct contains the whole context of a handshake, and is filled progressively
+// throughout the various parts of the handshake.
+struct HandshakeContext<T> {
+    config: SecioConfig,
+    state: T
+}
+
+// HandshakeContext<()> --with_local-> HandshakeContext<Local>
+struct Local {
+    // Locally-generated random number. The array size can be changed without any repercussion.
+    nonce: [u8; 16],
+    // Our encoded local public key
+    public_key_encoded: Vec<u8>,
+    // Our local proposition's raw bytes:
+    proposition_bytes: Vec<u8>
+}
+
+// HandshakeContext<Local> --with_remote-> HandshakeContext<Remote>
+struct Remote {
+    local: Local,
+    // The remote's proposition's raw bytes:
+    proposition_bytes: BytesMut,
+    // The remote's public key:
+    public_key: PublicKey,
+    // The remote's `nonce`.
+    // If the NONCE size is actually part of the protocol, we can change this to a fixed-size
+    // array instead of a `Vec`.
+    nonce: Vec<u8>,
+    // Set to `ordering(
+    //             hash(concat(remote-pubkey, local-none)),
+    //             hash(concat(local-pubkey, remote-none))
+    //         )`.
+    // `Ordering::Equal` is an invalid value (as it would mean we're talking to ourselves).
+    //
+    // Since everything is symmetrical, this value is used to determine what should be ours
+    // and what should be the remote's.
+    hashes_ordering: Ordering,
+    // Crypto algorithms chosen for the communication:
+    chosen_exchange: KeyAgreement,
+    chosen_cipher: Cipher,
+    chosen_hash: algo_support::Digest,
+}
+
+// HandshakeContext<Remote> --with_ephemeral-> HandshakeContext<Ephemeral>
+struct Ephemeral {
+    remote: Remote,
+    // Ephemeral keypair generated for the handshake:
+    local_tmp_priv_key: exchange::AgreementPrivateKey,
+    local_tmp_pub_key: Vec<u8>
+}
+
+// HandshakeContext<Ephemeral> --take_private_key-> HandshakeContext<PubEphemeral>
+struct PubEphemeral {
+    remote: Remote,
+    local_tmp_pub_key: Vec<u8>
+}
+
+impl HandshakeContext<()> {
+    fn new(config: SecioConfig) -> Self {
+        HandshakeContext {
+            config,
+            state: ()
+        }
+    }
+>>>>>>> upstream/master
 
 /// Performs a handshake on the given socket.
 ///

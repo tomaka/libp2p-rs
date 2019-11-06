@@ -114,7 +114,11 @@ fn ik_xx() {
                 if endpoint.is_listener() {
                     Either::Left(apply_inbound(output, NoiseConfig::ik_listener(server_dh)))
                 } else {
+<<<<<<< HEAD
                     Either::Right(apply_outbound(output, NoiseConfig::xx(server_dh),
+=======
+                    Either::B(apply_outbound(output, NoiseConfig::xx(server_dh),
+>>>>>>> upstream/master
                         upgrade::Version::V1))
                 }
             })
@@ -125,7 +129,11 @@ fn ik_xx() {
         let client_transport = TcpConfig::new()
             .and_then(move |output, endpoint| {
                 if endpoint.is_dialer() {
+<<<<<<< HEAD
                     Either::Left(apply_outbound(output,
+=======
+                    Either::A(apply_outbound(output,
+>>>>>>> upstream/master
                         NoiseConfig::ik_dialer(client_dh, server_id_public, server_dh_public),
                         upgrade::Version::V1))
                 } else {

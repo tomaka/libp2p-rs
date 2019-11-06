@@ -130,6 +130,7 @@ where
     T: AsyncWrite + AsyncRead + Send + Unpin + 'static,
     C: Protocol<C> + AsRef<[u8]>
 {
+<<<<<<< HEAD
     Handshake(Box::pin(async move {
         let mut state = State::new(io, session, identity, identity_x)?;
         send_identity(&mut state).await?;
@@ -244,6 +245,130 @@ where
         recv_identity(&mut state).await?;
         state.finish()
     }))
+=======
+    /// Creates an authenticated Noise handshake for the initiator of a
+    /// single roundtrip (2 message) handshake pattern.
+    ///
+    /// Subject to the chosen [`IdentityExchange`], this message sequence
+    /// identifies the local node to the remote with the first message payload
+    /// (i.e. unencrypted) and expects the remote to identify itself in the
+    /// second message payload.
+    ///
+    /// This message sequence is suitable for authenticated 2-message Noise handshake
+    /// patterns where the static keys of the initiator and responder are either
+    /// known (i.e. appear in the pre-message pattern) or are sent with
+    /// the first and second message, respectively (e.g. `IK` or `IX`).
+    ///
+    /// ```raw
+    /// initiator -{id}-> responder
+    /// initiator <-{id}- responder
+    /// ```
+    pub fn rt1_initiator(
+        io: T,
+        session: Result<snow::HandshakeState, NoiseError>,
+        identity: KeypairIdentity,
+        identity_x: IdentityExchange
+    ) -> Handshake<T, C> {
+        Handshake(Box::new(
+            State::new(io, session, identity, identity_x)
+                .and_then(State::send_identity)
+                .and_then(State::recv_identity)
+                .and_then(State::finish)))
+    }
+
+    /// Creates an authenticated Noise handshake for the responder of a
+    /// single roundtrip (2 message) handshake pattern.
+    ///
+    /// Subject to the chosen [`IdentityExchange`], this message sequence expects the
+    /// remote to identify itself in the first message payload (i.e. unencrypted)
+    /// and identifies the local node to the remote in the second message payload.
+    ///
+    /// This message sequence is suitable for authenticated 2-message Noise handshake
+    /// patterns where the static keys of the initiator and responder are either
+    /// known (i.e. appear in the pre-message pattern) or are sent with the first
+    /// and second message, respectively (e.g. `IK` or `IX`).
+    ///
+    /// ```raw
+    /// initiator -{id}-> responder
+    /// initiator <-{id}- responder
+    /// ```
+    pub fn rt1_responder(
+        io: T,
+        session: Result<snow::HandshakeState, NoiseError>,
+        identity: KeypairIdentity,
+        identity_x: IdentityExchange,
+    ) -> Handshake<T, C> {
+        Handshake(Box::new(
+            State::new(io, session, identity, identity_x)
+                .and_then(State::recv_identity)
+                .and_then(State::send_identity)
+                .and_then(State::finish)))
+    }
+
+    /// Creates an authenticated Noise handshake for the initiator of a
+    /// 1.5-roundtrip (3 message) handshake pattern.
+    ///
+    /// Subject to the chosen [`IdentityExchange`], this message sequence expects
+    /// the remote to identify itself in the second message payload and
+    /// identifies the local node to the remote in the third message payload.
+    /// The first (unencrypted) message payload is always empty.
+    ///
+    /// This message sequence is suitable for authenticated 3-message Noise handshake
+    /// patterns where the static keys of the responder and initiator are either known
+    /// (i.e. appear in the pre-message pattern) or are sent with the second and third
+    /// message, respectively (e.g. `XX`).
+    ///
+    /// ```raw
+    /// initiator --{}--> responder
+    /// initiator <-{id}- responder
+    /// initiator -{id}-> responder
+    /// ```
+    pub fn rt15_initiator(
+        io: T,
+        session: Result<snow::HandshakeState, NoiseError>,
+        identity: KeypairIdentity,
+        identity_x: IdentityExchange
+    ) -> Handshake<T, C> {
+        Handshake(Box::new(
+            State::new(io, session, identity, identity_x)
+                .and_then(State::send_empty)
+                .and_then(State::recv_identity)
+                .and_then(State::send_identity)
+                .and_then(State::finish)))
+    }
+
+    /// Creates an authenticated Noise handshake for the responder of a
+    /// 1.5-roundtrip (3 message) handshake pattern.
+    ///
+    /// Subject to the chosen [`IdentityExchange`], this message sequence
+    /// identifies the local node in the second message payload and expects
+    /// the remote to identify itself in the third message payload. The first
+    /// (unencrypted) message payload is always empty.
+    ///
+    /// This message sequence is suitable for authenticated 3-message Noise handshake
+    /// patterns where the static keys of the responder and initiator are either known
+    /// (i.e. appear in the pre-message pattern) or are sent with the second and third
+    /// message, respectively (e.g. `XX`).
+    ///
+    /// ```raw
+    /// initiator --{}--> responder
+    /// initiator <-{id}- responder
+    /// initiator -{id}-> responder
+    /// ```
+    pub fn rt15_responder(
+        io: T,
+        session: Result<snow::HandshakeState, NoiseError>,
+        identity: KeypairIdentity,
+        identity_x: IdentityExchange
+    ) -> Handshake<T, C> {
+        Handshake(Box::new(
+            State::new(io, session, identity, identity_x)
+                .and_then(State::recv_empty)
+                .and_then(State::send_identity)
+                .and_then(State::recv_identity)
+                .and_then(State::finish)))
+    }
+>>>>>>> upstream/master
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -323,7 +448,11 @@ impl<T> State<T>
                         }
                     }
                 };
+<<<<<<< HEAD
                 Ok((remote, NoiseOutput { session: SnowState::Transport(s), .. self.io }))
+=======
+                future::ok((remote, NoiseOutput { session: SnowState::Transport(s), .. self.io }))
+>>>>>>> upstream/master
             }
         }
     }
@@ -357,6 +486,7 @@ async fn recv_identity<T>(state: &mut State<T>) -> Result<(), NoiseError>
 where
     T: AsyncRead + Unpin,
 {
+<<<<<<< HEAD
     let mut len_buf = [0,0];
     state.io.read_exact(&mut len_buf).await?;
     let len = u16::from_be_bytes(len_buf) as usize;
@@ -371,6 +501,50 @@ where
         if let Some(ref k) = state.id_remote_pubkey {
             if k != &pk {
                 return Err(NoiseError::InvalidKey)
+=======
+    type Error = NoiseError;
+    type Item = State<T>;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        loop {
+            match mem::replace(&mut self.state, RecvIdentityState::Done) {
+                RecvIdentityState::Init(st) => {
+                    self.state = RecvIdentityState::ReadPayloadLen(nio::read_exact(st, [0, 0]));
+                },
+                RecvIdentityState::ReadPayloadLen(mut read_len) => {
+                    if let Async::Ready((st, bytes)) = read_len.poll()? {
+                        let len = u16::from_be_bytes(bytes) as usize;
+                        let buf = vec![0; len];
+                        self.state = RecvIdentityState::ReadPayload(nio::read_exact(st, buf));
+                    } else {
+                        self.state = RecvIdentityState::ReadPayloadLen(read_len);
+                        return Ok(Async::NotReady);
+                    }
+                },
+                RecvIdentityState::ReadPayload(mut read_payload) => {
+                    if let Async::Ready((mut st, bytes)) = read_payload.poll()? {
+                        let pb: payload_proto::Identity = protobuf::parse_from_bytes(&bytes)?;
+                        if !pb.pubkey.is_empty() {
+                            let pk = identity::PublicKey::from_protobuf_encoding(pb.get_pubkey())
+                                .map_err(|_| NoiseError::InvalidKey)?;
+                            if let Some(ref k) = st.id_remote_pubkey {
+                                if k != &pk {
+                                    return Err(NoiseError::InvalidKey)
+                                }
+                            }
+                            st.id_remote_pubkey = Some(pk);
+                        }
+                        if !pb.signature.is_empty() {
+                            st.dh_remote_pubkey_sig = Some(pb.signature)
+                        }
+                        return Ok(Async::Ready(st))
+                    } else {
+                        self.state = RecvIdentityState::ReadPayload(read_payload);
+                        return Ok(Async::NotReady)
+                    }
+                },
+                RecvIdentityState::Done => panic!("RecvIdentity polled after completion")
+>>>>>>> upstream/master
             }
         }
         state.id_remote_pubkey = Some(pk);
@@ -387,9 +561,57 @@ async fn send_identity<T>(state: &mut State<T>) -> Result<(), NoiseError>
 where
     T: AsyncWrite + Unpin,
 {
+<<<<<<< HEAD
     let mut pb = payload_proto::Identity::new();
     if state.send_identity {
         pb.set_pubkey(state.identity.public.clone().into_protobuf_encoding());
+=======
+    type Error = NoiseError;
+    type Item = State<T>;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        loop {
+            match mem::replace(&mut self.state, SendIdentityState::Done) {
+                SendIdentityState::Init(st) => {
+                    let mut pb = payload_proto::Identity::new();
+                    if st.send_identity {
+                        pb.set_pubkey(st.identity.public.clone().into_protobuf_encoding());
+                    }
+                    if let Some(ref sig) = st.identity.signature {
+                        pb.set_signature(sig.clone());
+                    }
+                    let pb_bytes = pb.write_to_bytes()?;
+                    let len = (pb_bytes.len() as u16).to_be_bytes();
+                    let write_len = nio::write_all(st, len);
+                    self.state = SendIdentityState::WritePayloadLen(write_len, pb_bytes);
+                },
+                SendIdentityState::WritePayloadLen(mut write_len, payload) => {
+                    if let Async::Ready((st, _)) = write_len.poll()? {
+                        self.state = SendIdentityState::WritePayload(nio::write_all(st, payload));
+                    } else {
+                        self.state = SendIdentityState::WritePayloadLen(write_len, payload);
+                        return Ok(Async::NotReady)
+                    }
+                },
+                SendIdentityState::WritePayload(mut write_payload) => {
+                    if let Async::Ready((st, _)) = write_payload.poll()? {
+                        self.state = SendIdentityState::Flush(st);
+                    } else {
+                        self.state = SendIdentityState::WritePayload(write_payload);
+                        return Ok(Async::NotReady)
+                    }
+                },
+                SendIdentityState::Flush(mut st) => {
+                    if !st.poll_flush()?.is_ready() {
+                        self.state = SendIdentityState::Flush(st);
+                        return Ok(Async::NotReady)
+                    }
+                    return Ok(Async::Ready(st))
+                },
+                SendIdentityState::Done => panic!("SendIdentity polled after completion")
+            }
+        }
+>>>>>>> upstream/master
     }
     if let Some(ref sig) = state.identity.signature {
         pb.set_signature(sig.clone());
