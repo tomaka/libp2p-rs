@@ -36,10 +36,9 @@ pub struct SendSyncHack<T>(SendWrapper<T>);
 
 impl<T> Future for SendSyncHack<T>
 where T: Future {
-    type Item = T::Item;
-    type Error = T::Error;
+    type Output = T::Output;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         self.0.poll()
     }
 }
@@ -48,7 +47,7 @@ where T: Future {
 ///
 /// Returns the opaque private key and the corresponding public key.
 pub fn generate_agreement(algorithm: KeyAgreement)
-    -> impl Future<Item = (AgreementPrivateKey, Vec<u8>), Error = SecioError>
+    -> impl Future<Output = Result<(AgreementPrivateKey, Vec<u8>), SecioError>>
 {
     // First step is to create the `SubtleCrypto` object.
     let crypto = build_crypto_future();
@@ -106,7 +105,7 @@ pub fn generate_agreement(algorithm: KeyAgreement)
 
 /// Finish the agreement. On success, returns the shared key that both remote agreed upon.
 pub fn agree(algorithm: KeyAgreement, key: AgreementPrivateKey, other_public_key: &[u8], out_size: usize)
-    -> impl Future<Item = Vec<u8>, Error = SecioError>
+    -> impl Future<Output = Result<Vec<u8>, SecioError>>
 {
     let (private_key, crypto) = key.0.take();
 
