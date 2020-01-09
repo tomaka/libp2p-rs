@@ -20,15 +20,24 @@
 
 use crate::upgrade::{InboundUpgrade, OutboundUpgrade, UpgradeInfo};
 use futures::prelude::*;
-use std::{pin::Pin, task::Context, task::Poll};
+use std::{fmt, pin::Pin, task::Context, task::Poll};
 
 /// Wraps around an upgrade and applies a closure to the output.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MapInboundUpgrade<U, F> { upgrade: U, fun: F }
 
 impl<U, F> MapInboundUpgrade<U, F> {
     pub fn new(upgrade: U, fun: F) -> Self {
         MapInboundUpgrade { upgrade, fun }
+    }
+}
+
+impl<U, F> fmt::Debug for MapInboundUpgrade<U, F>
+where
+    U: fmt::Debug
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&self.upgrade, f)
     }
 }
 
@@ -75,12 +84,21 @@ where
 }
 
 /// Wraps around an upgrade and applies a closure to the output.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MapOutboundUpgrade<U, F> { upgrade: U, fun: F }
 
 impl<U, F> MapOutboundUpgrade<U, F> {
     pub fn new(upgrade: U, fun: F) -> Self {
         MapOutboundUpgrade { upgrade, fun }
+    }
+}
+
+impl<U, F> fmt::Debug for MapOutboundUpgrade<U, F>
+where
+    U: fmt::Debug
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&self.upgrade, f)
     }
 }
 
@@ -127,12 +145,21 @@ where
 }
 
 /// Wraps around an upgrade and applies a closure to the error.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MapInboundUpgradeErr<U, F> { upgrade: U, fun: F }
 
 impl<U, F> MapInboundUpgradeErr<U, F> {
     pub fn new(upgrade: U, fun: F) -> Self {
         MapInboundUpgradeErr { upgrade, fun }
+    }
+}
+
+impl<U, F> fmt::Debug for MapInboundUpgradeErr<U, F>
+where
+    U: fmt::Debug
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&self.upgrade, f)
     }
 }
 
@@ -179,12 +206,21 @@ where
 }
 
 /// Wraps around an upgrade and applies a closure to the error.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MapOutboundUpgradeErr<U, F> { upgrade: U, fun: F }
 
 impl<U, F> MapOutboundUpgradeErr<U, F> {
     pub fn new(upgrade: U, fun: F) -> Self {
         MapOutboundUpgradeErr { upgrade, fun }
+    }
+}
+
+impl<U, F> fmt::Debug for MapOutboundUpgradeErr<U, F>
+where
+    U: fmt::Debug
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&self.upgrade, f)
     }
 }
 

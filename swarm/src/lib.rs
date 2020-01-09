@@ -54,6 +54,7 @@
 //!
 
 mod behaviour;
+mod boxed;
 mod registry;
 
 pub mod protocols_handler;
@@ -65,6 +66,7 @@ pub use behaviour::{
     NetworkBehaviourEventProcess,
     PollParameters
 };
+pub use boxed::BoxedNetworkBehaviour;
 pub use protocols_handler::{
     IntoProtocolsHandler,
     IntoProtocolsHandlerSelect,
