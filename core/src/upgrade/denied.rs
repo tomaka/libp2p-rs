@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::upgrade::{InboundUpgrade, OutboundUpgrade, UpgradeInfo};
+use crate::upgrade::{BoxAsyncReadWrite, InboundUpgrade, OutboundUpgrade, UpgradeInfo};
 use futures::future;
 use std::iter;
 use void::Void;
@@ -37,22 +37,22 @@ impl UpgradeInfo for DeniedUpgrade {
     }
 }
 
-impl<C> InboundUpgrade<C> for DeniedUpgrade {
+impl InboundUpgrade for DeniedUpgrade {
     type Output = Void;
     type Error = Void;
     type Future = future::Pending<Result<Self::Output, Self::Error>>;
 
-    fn upgrade_inbound(self, _: C, _: Self::Info) -> Self::Future {
+    fn upgrade_inbound(self, _: BoxAsyncReadWrite, _: Self::Info) -> Self::Future {
         future::pending()
     }
 }
 
-impl<C> OutboundUpgrade<C> for DeniedUpgrade {
+impl OutboundUpgrade for DeniedUpgrade {
     type Output = Void;
     type Error = Void;
     type Future = future::Pending<Result<Self::Output, Self::Error>>;
 
-    fn upgrade_outbound(self, _: C, _: Self::Info) -> Self::Future {
+    fn upgrade_outbound(self, _: BoxAsyncReadWrite, _: Self::Info) -> Self::Future {
         future::pending()
     }
 }

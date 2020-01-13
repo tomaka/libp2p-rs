@@ -324,7 +324,7 @@ where
     where
         TFut: Future<Output = Result<(TConnInfo, TMuxer), TReachErr>> + Send + 'static,
         THandler: IntoNodeHandler<TConnInfo> + Send + 'static,
-        THandler::Handler: NodeHandler<Substream = Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent, Error = THandlerErr> + Send + 'static,
+        THandler::Handler: NodeHandler<InEvent = TInEvent, OutEvent = TOutEvent, Error = THandlerErr> + Send + 'static,
         <THandler::Handler as NodeHandler>::OutboundOpenInfo: Send + 'static,
         TReachErr: error::Error + Send + 'static,
         THandlerErr: error::Error + Send + 'static,
@@ -375,7 +375,7 @@ where
         -> CollectionNodeAccept<TConnInfo, TUserData>
     where
         THandler: IntoNodeHandler<TConnInfo> + Send + 'static,
-        THandler::Handler: NodeHandler<Substream = Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent, Error = THandlerErr> + Send + 'static,
+        THandler::Handler: NodeHandler<InEvent = TInEvent, OutEvent = TOutEvent, Error = THandlerErr> + Send + 'static,
         <THandler::Handler as NodeHandler>::OutboundOpenInfo: Send + 'static,
         TReachErr: error::Error + Send + 'static,
         THandlerErr: error::Error + Send + 'static,

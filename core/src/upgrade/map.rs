@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::upgrade::{InboundUpgrade, OutboundUpgrade, UpgradeInfo};
+use crate::upgrade::{BoxAsyncReadWrite, InboundUpgrade, OutboundUpgrade, UpgradeInfo};
 use futures::prelude::*;
 use std::{pin::Pin, task::Context, task::Poll};
 
@@ -44,16 +44,16 @@ where
     }
 }
 
-impl<C, U, F, T> InboundUpgrade<C> for MapInboundUpgrade<U, F>
+impl<U, F, T> InboundUpgrade for MapInboundUpgrade<U, F>
 where
-    U: InboundUpgrade<C>,
+    U: InboundUpgrade,
     F: FnOnce(U::Output) -> T
 {
     type Output = T;
     type Error = U::Error;
     type Future = MapFuture<U::Future, F>;
 
-    fn upgrade_inbound(self, sock: C, info: Self::Info) -> Self::Future {
+    fn upgrade_inbound(self, sock: BoxAsyncReadWrite, info: Self::Info) -> Self::Future {
         MapFuture {
             inner: self.upgrade.upgrade_inbound(sock, info),
             map: Some(self.fun)
@@ -61,15 +61,15 @@ where
     }
 }
 
-impl<C, U, F> OutboundUpgrade<C> for MapInboundUpgrade<U, F>
+impl<U, F> OutboundUpgrade for MapInboundUpgrade<U, F>
 where
-    U: OutboundUpgrade<C>,
+    U: OutboundUpgrade,
 {
     type Output = U::Output;
     type Error = U::Error;
     type Future = U::Future;
 
-    fn upgrade_outbound(self, sock: C, info: Self::Info) -> Self::Future {
+    fn upgrade_outbound(self, sock: BoxAsyncReadWrite, info: Self::Info) -> Self::Future {
         self.upgrade.upgrade_outbound(sock, info)
     }
 }
@@ -96,29 +96,29 @@ where
     }
 }
 
-impl<C, U, F> InboundUpgrade<C> for MapOutboundUpgrade<U, F>
+impl<U, F> InboundUpgrade for MapOutboundUpgrade<U, F>
 where
-    U: InboundUpgrade<C>,
+    U: InboundUpgrade,
 {
     type Output = U::Output;
     type Error = U::Error;
     type Future = U::Future;
 
-    fn upgrade_inbound(self, sock: C, info: Self::Info) -> Self::Future {
+    fn upgrade_inbound(self, sock: BoxAsyncReadWrite, info: Self::Info) -> Self::Future {
         self.upgrade.upgrade_inbound(sock, info)
     }
 }
 
-impl<C, U, F, T> OutboundUpgrade<C> for MapOutboundUpgrade<U, F>
+impl<U, F, T> OutboundUpgrade for MapOutboundUpgrade<U, F>
 where
-    U: OutboundUpgrade<C>,
+    U: OutboundUpgrade,
     F: FnOnce(U::Output) -> T
 {
     type Output = T;
     type Error = U::Error;
     type Future = MapFuture<U::Future, F>;
 
-    fn upgrade_outbound(self, sock: C, info: Self::Info) -> Self::Future {
+    fn upgrade_outbound(self, sock: BoxAsyncReadWrite, info: Self::Info) -> Self::Future {
         MapFuture {
             inner: self.upgrade.upgrade_outbound(sock, info),
             map: Some(self.fun)
@@ -148,16 +148,16 @@ where
     }
 }
 
-impl<C, U, F, T> InboundUpgrade<C> for MapInboundUpgradeErr<U, F>
+impl<U, F, T> InboundUpgrade for MapInboundUpgradeErr<U, F>
 where
-    U: InboundUpgrade<C>,
+    U: InboundUpgrade,
     F: FnOnce(U::Error) -> T
 {
     type Output = U::Output;
     type Error = T;
     type Future = MapErrFuture<U::Future, F>;
 
-    fn upgrade_inbound(self, sock: C, info: Self::Info) -> Self::Future {
+    fn upgrade_inbound(self, sock: BoxAsyncReadWrite, info: Self::Info) -> Self::Future {
         MapErrFuture {
             fut: self.upgrade.upgrade_inbound(sock, info),
             fun: Some(self.fun)
@@ -165,15 +165,15 @@ where
     }
 }
 
-impl<C, U, F> OutboundUpgrade<C> for MapInboundUpgradeErr<U, F>
+impl<U, F> OutboundUpgrade for MapInboundUpgradeErr<U, F>
 where
-    U: OutboundUpgrade<C>,
+    U: OutboundUpgrade,
 {
     type Output = U::Output;
     type Error = U::Error;
     type Future = U::Future;
 
-    fn upgrade_outbound(self, sock: C, info: Self::Info) -> Self::Future {
+    fn upgrade_outbound(self, sock: BoxAsyncReadWrite, info: Self::Info) -> Self::Future {
         self.upgrade.upgrade_outbound(sock, info)
     }
 }
@@ -200,16 +200,16 @@ where
     }
 }
 
-impl<C, U, F, T> OutboundUpgrade<C> for MapOutboundUpgradeErr<U, F>
+impl<U, F, T> OutboundUpgrade for MapOutboundUpgradeErr<U, F>
 where
-    U: OutboundUpgrade<C>,
+    U: OutboundUpgrade,
     F: FnOnce(U::Error) -> T
 {
     type Output = U::Output;
     type Error = T;
     type Future = MapErrFuture<U::Future, F>;
 
-    fn upgrade_outbound(self, sock: C, info: Self::Info) -> Self::Future {
+    fn upgrade_outbound(self, sock: BoxAsyncReadWrite, info: Self::Info) -> Self::Future {
         MapErrFuture {
             fut: self.upgrade.upgrade_outbound(sock, info),
             fun: Some(self.fun)
@@ -217,15 +217,15 @@ where
     }
 }
 
-impl<C, U, F> InboundUpgrade<C> for MapOutboundUpgradeErr<U, F>
+impl<U, F> InboundUpgrade for MapOutboundUpgradeErr<U, F>
 where
-    U: InboundUpgrade<C>
+    U: InboundUpgrade
 {
     type Output = U::Output;
     type Error = U::Error;
     type Future = U::Future;
 
-    fn upgrade_inbound(self, sock: C, info: Self::Info) -> Self::Future {
+    fn upgrade_inbound(self, sock: BoxAsyncReadWrite, info: Self::Info) -> Self::Future {
         self.upgrade.upgrade_inbound(sock, info)
     }
 }

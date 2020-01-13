@@ -35,6 +35,7 @@ use crate::{
     muxing::StreamMuxer,
     upgrade::{
         self,
+        BoxAsyncReadWrite,
         OutboundUpgrade,
         InboundUpgrade,
         apply_inbound,
@@ -97,15 +98,14 @@ where
     ///
     ///   * I/O upgrade: `C -> (I, D)`.
     ///   * Transport output: `C -> (I, D)`
-    pub fn authenticate<C, D, U, I, E>(self, upgrade: U) -> Builder<
-        AndThen<T, impl FnOnce(C, ConnectedPoint) -> Authenticate<C, U> + Clone>
+    pub fn authenticate<D, U, I, E>(self, upgrade: U) -> Builder<
+        AndThen<T, impl FnOnce(BoxAsyncReadWrite, ConnectedPoint) -> Authenticate<U> + Clone>
     > where
-        T: Transport<Output = C>,
+        T: Transport<Output = BoxAsyncReadWrite>,
         I: ConnectionInfo,
-        C: AsyncRead + AsyncWrite + Unpin,
-        D: AsyncRead + AsyncWrite + Unpin,
-        U: InboundUpgrade<Negotiated<C>, Output = (I, D), Error = E>,
-        U: OutboundUpgrade<Negotiated<C>, Output = (I, D), Error = E> + Clone,
+        D: AsyncRead + AsyncWrite + Send + 'static,
+        U: InboundUpgrade<Output = (I, D), Error = E>,
+        U: OutboundUpgrade<Output = (I, D), Error = E> + Clone,
         E: Error + 'static,
     {
         let version = self.version;
@@ -127,14 +127,13 @@ where
     ///
     ///   * I/O upgrade: `C -> D`.
     ///   * Transport output: `(I, C) -> (I, D)`.
-    pub fn apply<C, D, U, I, E>(self, upgrade: U) -> Builder<Upgrade<T, U>>
+    pub fn apply<D, U, I, E>(self, upgrade: U) -> Builder<Upgrade<T, U>>
     where
-        T: Transport<Output = (I, C)>,
-        C: AsyncRead + AsyncWrite + Unpin,
-        D: AsyncRead + AsyncWrite + Unpin,
+        T: Transport<Output = (I, BoxAsyncReadWrite)>,
+        D: AsyncRead + AsyncWrite + Send,
         I: ConnectionInfo,
-        U: InboundUpgrade<Negotiated<C>, Output = D, Error = E>,
-        U: OutboundUpgrade<Negotiated<C>, Output = D, Error = E> + Clone,
+        U: InboundUpgrade<Output = D, Error = E>,
+        U: OutboundUpgrade<Output = D, Error = E> + Clone,
         E: Error + 'static,
     {
         Builder::new(Upgrade::new(self.inner, upgrade), self.version)
@@ -151,15 +150,14 @@ where
     ///
     ///   * I/O upgrade: `C -> M`.
     ///   * Transport output: `(I, C) -> (I, M)`.
-    pub fn multiplex<C, M, U, I, E>(self, upgrade: U)
-        -> AndThen<T, impl FnOnce((I, C), ConnectedPoint) -> Multiplex<C, U, I> + Clone>
+    pub fn multiplex<M, U, I, E>(self, upgrade: U)
+        -> AndThen<T, impl FnOnce((I, BoxAsyncReadWrite), ConnectedPoint) -> Multiplex<U, I> + Clone>
     where
-        T: Transport<Output = (I, C)>,
-        C: AsyncRead + AsyncWrite + Unpin,
+        T: Transport<Output = (I, BoxAsyncReadWrite)>,
         M: StreamMuxer,
         I: ConnectionInfo,
-        U: InboundUpgrade<Negotiated<C>, Output = M, Error = E>,
-        U: OutboundUpgrade<Negotiated<C>, Output = M, Error = E> + Clone,
+        U: InboundUpgrade<Output = M, Error = E>,
+        U: OutboundUpgrade<Output = M, Error = E> + Clone,
         E: Error + 'static,
     {
         let version = self.version;
@@ -175,24 +173,22 @@ where
 ///
 /// Configured through [`Builder::authenticate`].
 #[pin_project::pin_project]
-pub struct Authenticate<C, U>
+pub struct Authenticate<U>
 where
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: InboundUpgrade<Negotiated<C>> + OutboundUpgrade<Negotiated<C>>
+    U: InboundUpgrade + OutboundUpgrade
 {
     #[pin]
-    inner: EitherUpgrade<C, U>
+    inner: EitherUpgrade<U>
 }
 
-impl<C, U> Future for Authenticate<C, U>
+impl<U> Future for Authenticate<U>
 where
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: InboundUpgrade<Negotiated<C>> + OutboundUpgrade<Negotiated<C>,
-        Output = <U as InboundUpgrade<Negotiated<C>>>::Output,
-        Error = <U as InboundUpgrade<Negotiated<C>>>::Error
+    U: InboundUpgrade + OutboundUpgrade<
+        Output = <U as InboundUpgrade>::Output,
+        Error = <U as InboundUpgrade>::Error
     >
 {
-    type Output = <EitherUpgrade<C, U> as Future>::Output;
+    type Output = <EitherUpgrade<U> as Future>::Output;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = self.project();
@@ -205,21 +201,19 @@ where
 ///
 /// Configured through [`Builder::multiplex`].
 #[pin_project::pin_project]
-pub struct Multiplex<C, U, I>
+pub struct Multiplex<U, I>
 where
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: InboundUpgrade<Negotiated<C>> + OutboundUpgrade<Negotiated<C>>,
+    U: InboundUpgrade + OutboundUpgrade,
 {
     info: Option<I>,
     #[pin]
-    upgrade: EitherUpgrade<C, U>,
+    upgrade: EitherUpgrade<U>,
 }
 
-impl<C, U, I, M, E> Future for Multiplex<C, U, I>
+impl<U, I, M, E> Future for Multiplex<U, I>
 where
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: InboundUpgrade<Negotiated<C>, Output = M, Error = E>,
-    U: OutboundUpgrade<Negotiated<C>, Output = M, Error = E>
+    U: InboundUpgrade<Output = M, Error = E>,
+    U: OutboundUpgrade<Output = M, Error = E>
 {
     type Output = Result<(I, M), UpgradeError<E>>;
 
@@ -235,7 +229,7 @@ where
 }
 
 /// An inbound or outbound upgrade.
-type EitherUpgrade<C, U> = future::Either<InboundUpgradeApply<C, U>, OutboundUpgradeApply<C, U>>;
+type EitherUpgrade<U> = future::Either<InboundUpgradeApply<U>, OutboundUpgradeApply<U>>;
 
 /// An upgrade on an authenticated, non-multiplexed [`Transport`].
 ///
@@ -249,20 +243,19 @@ impl<T, U> Upgrade<T, U> {
     }
 }
 
-impl<T, C, D, U, I, E> Transport for Upgrade<T, U>
+impl<T, D, U, I, E> Transport for Upgrade<T, U>
 where
-    T: Transport<Output = (I, C)>,
+    T: Transport<Output = (I, BoxAsyncReadWrite)>,
     T::Error: 'static,
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: InboundUpgrade<Negotiated<C>, Output = D, Error = E>,
-    U: OutboundUpgrade<Negotiated<C>, Output = D, Error = E> + Clone,
+    U: InboundUpgrade<Output = D, Error = E>,
+    U: OutboundUpgrade<Output = D, Error = E> + Clone,
     E: Error + 'static
 {
     type Output = (I, D);
     type Error = TransportUpgradeError<T::Error, E>;
     type Listener = ListenerStream<T::Listener, U>;
-    type ListenerUpgrade = ListenerUpgradeFuture<T::ListenerUpgrade, U, I, C>;
-    type Dial = DialUpgradeFuture<T::Dial, U, I, C>;
+    type ListenerUpgrade = ListenerUpgradeFuture<T::ListenerUpgrade, U, I>;
+    type Dial = DialUpgradeFuture<T::Dial, U, I>;
 
     fn dial(self, addr: Multiaddr) -> Result<Self::Dial, TransportError<Self::Error>> {
         let future = self.inner.dial(addr.clone())
@@ -319,20 +312,18 @@ where
 }
 
 /// The [`Transport::Dial`] future of an [`Upgrade`]d transport.
-pub struct DialUpgradeFuture<F, U, I, C>
+pub struct DialUpgradeFuture<F, U, I>
 where
-    U: OutboundUpgrade<Negotiated<C>>,
-    C: AsyncRead + AsyncWrite + Unpin,
+    U: OutboundUpgrade,
 {
     future: Pin<Box<F>>,
-    upgrade: future::Either<Option<U>, (Option<I>, OutboundUpgradeApply<C, U>)>
+    upgrade: future::Either<Option<U>, (Option<I>, OutboundUpgradeApply<U>)>
 }
 
-impl<F, U, I, C, D> Future for DialUpgradeFuture<F, U, I, C>
+impl<F, U, I, D> Future for DialUpgradeFuture<F, U, I>
 where
-    F: TryFuture<Ok = (I, C)>,
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: OutboundUpgrade<Negotiated<C>, Output = D>,
+    F: TryFuture<Ok = (I, BoxAsyncReadWrite)>,
+    U: OutboundUpgrade<Output = D>,
     U::Error: Error
 {
     type Output = Result<(I, D), TransportUpgradeError<F::Error, U::Error>>;
@@ -365,10 +356,9 @@ where
     }
 }
 
-impl<F, U, I, C> Unpin for DialUpgradeFuture<F, U, I, C>
+impl<F, U, I> Unpin for DialUpgradeFuture<F, U, I>
 where
-    U: OutboundUpgrade<Negotiated<C>>,
-    C: AsyncRead + AsyncWrite + Unpin,
+    U: OutboundUpgrade,
 {
 }
 
@@ -378,14 +368,13 @@ pub struct ListenerStream<S, U> {
     upgrade: U
 }
 
-impl<S, U, F, I, C, D> Stream for ListenerStream<S, U>
+impl<S, U, F, I, D> Stream for ListenerStream<S, U>
 where
     S: TryStream<Ok = ListenerEvent<F>>,
-    F: TryFuture<Ok = (I, C)>,
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: InboundUpgrade<Negotiated<C>, Output = D> + Clone
+    F: TryFuture<Ok = (I, BoxAsyncReadWrite)>,
+    U: InboundUpgrade<Output = D> + Clone
 {
-    type Item = Result<ListenerEvent<ListenerUpgradeFuture<F, U, I, C>>, TransportUpgradeError<S::Error, U::Error>>;
+    type Item = Result<ListenerEvent<ListenerUpgradeFuture<F, U, I>>, TransportUpgradeError<S::Error, U::Error>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         match ready!(TryStream::try_poll_next(self.stream.as_mut(), cx)) {
@@ -410,20 +399,18 @@ impl<S, U> Unpin for ListenerStream<S, U> {
 }
 
 /// The [`Transport::ListenerUpgrade`] future of an [`Upgrade`]d transport.
-pub struct ListenerUpgradeFuture<F, U, I, C>
+pub struct ListenerUpgradeFuture<F, U, I>
 where
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: InboundUpgrade<Negotiated<C>>
+    U: InboundUpgrade
 {
     future: Pin<Box<F>>,
-    upgrade: future::Either<Option<U>, (Option<I>, InboundUpgradeApply<C, U>)>
+    upgrade: future::Either<Option<U>, (Option<I>, InboundUpgradeApply<U>)>
 }
 
-impl<F, U, I, C, D> Future for ListenerUpgradeFuture<F, U, I, C>
+impl<F, U, I, D> Future for ListenerUpgradeFuture<F, U, I>
 where
-    F: TryFuture<Ok = (I, C)>,
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: InboundUpgrade<Negotiated<C>, Output = D>,
+    F: TryFuture<Ok = (I, BoxAsyncReadWrite)>,
+    U: InboundUpgrade<Output = D>,
     U::Error: Error
 {
     type Output = Result<(I, D), TransportUpgradeError<F::Error, U::Error>>;
@@ -456,9 +443,8 @@ where
     }
 }
 
-impl<F, U, I, C> Unpin for ListenerUpgradeFuture<F, U, I, C>
+impl<F, U, I> Unpin for ListenerUpgradeFuture<F, U, I>
 where
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: InboundUpgrade<Negotiated<C>>
+    U: InboundUpgrade
 {
 }

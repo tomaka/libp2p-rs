@@ -66,7 +66,8 @@ mod optional;
 mod select;
 mod transfer;
 
-use futures::future::Future;
+use futures::prelude::*;
+use std::pin::Pin;
 
 pub use crate::Negotiated;
 pub use multistream_select::{Version, NegotiatedComplete, NegotiationError, ProtocolError};
@@ -125,6 +126,11 @@ impl<T: AsRef<[u8]>> ProtocolName for T {
     }
 }
 
+pub trait AsyncReadWrite: AsyncRead + AsyncWrite {}
+impl<T: AsyncRead + AsyncWrite> AsyncReadWrite for T {}
+
+pub type BoxAsyncReadWrite = Pin<Box<dyn AsyncReadWrite + Send + 'static>>;
+
 /// Common trait for upgrades that can be applied on inbound substreams, outbound substreams,
 /// or both.
 pub trait UpgradeInfo {
@@ -138,7 +144,7 @@ pub trait UpgradeInfo {
 }
 
 /// Possible upgrade on an inbound connection or substream.
-pub trait InboundUpgrade<C>: UpgradeInfo {
+pub trait InboundUpgrade: UpgradeInfo {
     /// Output after the upgrade has been successfully negotiated and the handshake performed.
     type Output;
     /// Possible error during the handshake.
@@ -150,12 +156,12 @@ pub trait InboundUpgrade<C>: UpgradeInfo {
     /// method is called to start the handshake.
     ///
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
-    fn upgrade_inbound(self, socket: C, info: Self::Info) -> Self::Future;
+    fn upgrade_inbound(self, socket: BoxAsyncReadWrite, info: Self::Info) -> Self::Future;
 }
 
 /// Extension trait for `InboundUpgrade`. Automatically implemented on all types that implement
 /// `InboundUpgrade`.
-pub trait InboundUpgradeExt<C>: InboundUpgrade<C> {
+pub trait InboundUpgradeExt: InboundUpgrade {
     /// Returns a new object that wraps around `Self` and applies a closure to the `Output`.
     fn map_inbound<F, T>(self, f: F) -> MapInboundUpgrade<Self, F>
     where
@@ -175,10 +181,10 @@ pub trait InboundUpgradeExt<C>: InboundUpgrade<C> {
     }
 }
 
-impl<C, U: InboundUpgrade<C>> InboundUpgradeExt<C> for U {}
+impl<U: InboundUpgrade> InboundUpgradeExt for U {}
 
 /// Possible upgrade on an outbound connection or substream.
-pub trait OutboundUpgrade<C>: UpgradeInfo {
+pub trait OutboundUpgrade: UpgradeInfo {
     /// Output after the upgrade has been successfully negotiated and the handshake performed.
     type Output;
     /// Possible error during the handshake.
@@ -190,12 +196,12 @@ pub trait OutboundUpgrade<C>: UpgradeInfo {
     /// method is called to start the handshake.
     ///
     /// The `info` is the identifier of the protocol, as produced by `protocol_info`.
-    fn upgrade_outbound(self, socket: C, info: Self::Info) -> Self::Future;
+    fn upgrade_outbound(self, socket: BoxAsyncReadWrite, info: Self::Info) -> Self::Future;
 }
 
 /// Extention trait for `OutboundUpgrade`. Automatically implemented on all types that implement
 /// `OutboundUpgrade`.
-pub trait OutboundUpgradeExt<C>: OutboundUpgrade<C> {
+pub trait OutboundUpgradeExt: OutboundUpgrade {
     /// Returns a new object that wraps around `Self` and applies a closure to the `Output`.
     fn map_outbound<F, T>(self, f: F) -> MapOutboundUpgrade<Self, F>
     where
@@ -215,5 +221,5 @@ pub trait OutboundUpgradeExt<C>: OutboundUpgrade<C> {
     }
 }
 
-impl<C, U: OutboundUpgrade<C>> OutboundUpgradeExt<C> for U {}
+impl<U: OutboundUpgrade> OutboundUpgradeExt for U {}
 

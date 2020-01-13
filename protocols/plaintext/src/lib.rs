@@ -82,7 +82,7 @@ impl UpgradeInfo for PlainText1Config {
     }
 }
 
-impl<C> InboundUpgrade<C> for PlainText1Config {
+impl<C> InboundUpgrade for PlainText1Config {
     type Output = C;
     type Error = Void;
     type Future = Ready<Result<C, Self::Error>>;
@@ -92,7 +92,7 @@ impl<C> InboundUpgrade<C> for PlainText1Config {
     }
 }
 
-impl<C> OutboundUpgrade<C> for PlainText1Config {
+impl<C> OutboundUpgrade for PlainText1Config {
     type Output = C;
     type Error = Void;
     type Future = Ready<Result<C, Self::Error>>;
@@ -118,7 +118,7 @@ impl UpgradeInfo for PlainText2Config {
     }
 }
 
-impl<C> InboundUpgrade<C> for PlainText2Config
+impl<C> InboundUpgrade for PlainText2Config
 where
     C: AsyncRead + AsyncWrite + Send + Unpin + 'static
 {
@@ -131,7 +131,7 @@ where
     }
 }
 
-impl<C> OutboundUpgrade<C> for PlainText2Config
+impl<C> OutboundUpgrade for PlainText2Config
 where
     C: AsyncRead + AsyncWrite + Send + Unpin + 'static
 {

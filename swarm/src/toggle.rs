@@ -31,7 +31,6 @@ use libp2p_core::{
     ConnectedPoint,
     PeerId,
     Multiaddr,
-    Negotiated,
     either::EitherOutput,
     upgrade::{InboundUpgrade, OutboundUpgrade, DeniedUpgrade, EitherUpgrade}
 };
@@ -207,7 +206,7 @@ where
 
     fn inject_fully_negotiated_inbound(
         &mut self,
-        out: <Self::InboundProtocol as InboundUpgrade<Negotiated<Self::Substream>>>::Output
+        out: <Self::InboundProtocol as InboundUpgrade>::Output
     ) {
         let out = match out {
             EitherOutput::First(out) => out,
@@ -220,7 +219,7 @@ where
 
     fn inject_fully_negotiated_outbound(
         &mut self,
-        out: <Self::OutboundProtocol as OutboundUpgrade<Negotiated<Self::Substream>>>::Output,
+        out: <Self::OutboundProtocol as OutboundUpgrade>::Output,
         info: Self::OutboundOpenInfo
     ) {
         self.inner.as_mut().expect("Can't receive an outbound substream if disabled; QED")
@@ -232,7 +231,7 @@ where
             .inject_event(event)
     }
 
-    fn inject_dial_upgrade_error(&mut self, info: Self::OutboundOpenInfo, err: ProtocolsHandlerUpgrErr<<Self::OutboundProtocol as OutboundUpgrade<Negotiated<Self::Substream>>>::Error>) {
+    fn inject_dial_upgrade_error(&mut self, info: Self::OutboundOpenInfo, err: ProtocolsHandlerUpgrErr<<Self::OutboundProtocol as OutboundUpgrade>::Error>) {
         self.inner.as_mut().expect("Can't receive an outbound substream if disabled; QED")
             .inject_dial_upgrade_error(info, err)
     }

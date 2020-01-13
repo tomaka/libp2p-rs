@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::{PeerId, muxing::StreamMuxer};
+use crate::{PeerId, muxing::StreamMuxer, upgrade::BoxAsyncReadWrite};
 use crate::nodes::node::{NodeEvent, NodeStream, Substream, Close};
 use std::{error, fmt, io, pin::Pin, task::Context, task::Poll};
 
@@ -33,8 +33,6 @@ pub trait NodeHandler {
     type OutEvent;
     /// Error that can happen during the processing of the node.
     type Error;
-    /// The type of the substream containing the data.
-    type Substream;
     /// Information about a substream. Can be sent to the handler through a `NodeHandlerEndpoint`,
     /// and will be passed back in `inject_substream` or `inject_outbound_closed`.
     type OutboundOpenInfo;
@@ -48,7 +46,7 @@ pub trait NodeHandler {
     /// Implementations are allowed to panic in the case of dialing if the `user_data` in
     /// `endpoint` doesn't correspond to what was returned earlier when polling, or is used
     /// multiple times.
-    fn inject_substream(&mut self, substream: Self::Substream, endpoint: NodeHandlerEndpoint<Self::OutboundOpenInfo>);
+    fn inject_substream(&mut self, substream: BoxAsyncReadWrite, endpoint: NodeHandlerEndpoint<Self::OutboundOpenInfo>);
 
     /// Injects an event coming from the outside into the handler.
     fn inject_event(&mut self, event: Self::InEvent);
@@ -149,7 +147,7 @@ impl<TOutboundOpenInfo, TCustom> NodeHandlerEvent<TOutboundOpenInfo, TCustom> {
 pub struct HandledNode<TMuxer, THandler>
 where
     TMuxer: StreamMuxer,
-    THandler: NodeHandler<Substream = Substream<TMuxer>>,
+    THandler: NodeHandler,
 {
     /// Node that handles the muxing.
     node: NodeStream<TMuxer, THandler::OutboundOpenInfo>,
@@ -160,7 +158,7 @@ where
 impl<TMuxer, THandler> fmt::Debug for HandledNode<TMuxer, THandler>
 where
     TMuxer: StreamMuxer,
-    THandler: NodeHandler<Substream = Substream<TMuxer>> + fmt::Debug,
+    THandler: NodeHandler + fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HandledNode")
@@ -173,14 +171,14 @@ where
 impl<TMuxer, THandler> Unpin for HandledNode<TMuxer, THandler>
 where
     TMuxer: StreamMuxer,
-    THandler: NodeHandler<Substream = Substream<TMuxer>>,
+    THandler: NodeHandler,
 {
 }
 
 impl<TMuxer, THandler> HandledNode<TMuxer, THandler>
 where
     TMuxer: StreamMuxer,
-    THandler: NodeHandler<Substream = Substream<TMuxer>>,
+    THandler: NodeHandler,
 {
     /// Builds a new `HandledNode`.
     pub fn new(muxer: TMuxer, handler: THandler) -> Self {

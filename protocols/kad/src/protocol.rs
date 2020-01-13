@@ -171,7 +171,7 @@ impl UpgradeInfo for KademliaProtocolConfig {
     }
 }
 
-impl<C> InboundUpgrade<C> for KademliaProtocolConfig
+impl<C> InboundUpgrade for KademliaProtocolConfig
 where
     C: AsyncRead + AsyncWrite + Unpin,
 {
@@ -203,7 +203,7 @@ where
     }
 }
 
-impl<C> OutboundUpgrade<C> for KademliaProtocolConfig
+impl<C> OutboundUpgrade for KademliaProtocolConfig
 where
     C: AsyncRead + AsyncWrite + Unpin,
 {

@@ -31,7 +31,7 @@ use libp2p_core::{
     PeerId,
     nodes::collection::ConnectionInfo,
     nodes::handled_node::{IntoNodeHandler, NodeHandler, NodeHandlerEndpoint, NodeHandlerEvent},
-    upgrade::{self, InboundUpgradeApply, OutboundUpgradeApply}
+    upgrade::{self, BoxAsyncReadWrite, InboundUpgradeApply, OutboundUpgradeApply}
 };
 use std::{error, fmt, pin::Pin, task::Context, task::Poll, time::Duration};
 use wasm_timer::{Delay, Instant};
@@ -102,12 +102,12 @@ where
     handler: TProtoHandler,
     /// Futures that upgrade incoming substreams.
     negotiating_in:
-        Vec<(InboundUpgradeApply<TProtoHandler::Substream, TProtoHandler::InboundProtocol>, Delay)>,
+        Vec<(InboundUpgradeApply<TProtoHandler::InboundProtocol>, Delay)>,
     /// Futures that upgrade outgoing substreams. The first element of the tuple is the userdata
     /// to pass back once successfully opened.
     negotiating_out: Vec<(
         TProtoHandler::OutboundOpenInfo,
-        OutboundUpgradeApply<TProtoHandler::Substream, TProtoHandler::OutboundProtocol>,
+        OutboundUpgradeApply<TProtoHandler::OutboundProtocol>,
         Delay,
     )>,
     /// For each outbound substream request, how to upgrade it. The first element of the tuple
@@ -184,7 +184,6 @@ where
     type InEvent = TProtoHandler::InEvent;
     type OutEvent = TProtoHandler::OutEvent;
     type Error = NodeHandlerWrapperError<TProtoHandler::Error>;
-    type Substream = TProtoHandler::Substream;
     // The first element of the tuple is the unique upgrade identifier
     // (see `unique_dial_upgrade_id`).
     type OutboundOpenInfo = (u64, TProtoHandler::OutboundOpenInfo, Duration);

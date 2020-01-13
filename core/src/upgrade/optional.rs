@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::upgrade::{InboundUpgrade, OutboundUpgrade, UpgradeInfo};
+use crate::upgrade::{InboundUpgrade, OutboundUpgrade, UpgradeInfo, BoxAsyncReadWrite};
 
 /// Upgrade that can be disabled at runtime.
 ///
@@ -51,15 +51,15 @@ where
     }
 }
 
-impl<C, T> InboundUpgrade<C> for OptionalUpgrade<T>
+impl<T> InboundUpgrade for OptionalUpgrade<T>
 where
-    T: InboundUpgrade<C>,
+    T: InboundUpgrade,
 {
     type Output = T::Output;
     type Error = T::Error;
     type Future = T::Future;
 
-    fn upgrade_inbound(self, sock: C, info: Self::Info) -> Self::Future {
+    fn upgrade_inbound(self, sock: BoxAsyncReadWrite, info: Self::Info) -> Self::Future {
         if let Some(inner) = self.0 {
             inner.upgrade_inbound(sock, info)
         } else {
@@ -68,15 +68,15 @@ where
     }
 }
 
-impl<C, T> OutboundUpgrade<C> for OptionalUpgrade<T>
+impl<T> OutboundUpgrade for OptionalUpgrade<T>
 where
-    T: OutboundUpgrade<C>,
+    T: OutboundUpgrade,
 {
     type Output = T::Output;
     type Error = T::Error;
     type Future = T::Future;
 
-    fn upgrade_outbound(self, sock: C, info: Self::Info) -> Self::Future {
+    fn upgrade_outbound(self, sock: BoxAsyncReadWrite, info: Self::Info) -> Self::Future {
         if let Some(inner) = self.0 {
             inner.upgrade_outbound(sock, info)
         } else {

@@ -20,7 +20,7 @@
 
 use crate::{
     either::{EitherOutput, EitherError, EitherFuture2, EitherName},
-    upgrade::{InboundUpgrade, OutboundUpgrade, UpgradeInfo}
+    upgrade::{BoxAsyncReadWrite, InboundUpgrade, OutboundUpgrade, UpgradeInfo}
 };
 
 /// Upgrade that combines two upgrades into one. Supports all the protocols supported by either
@@ -55,16 +55,16 @@ where
     }
 }
 
-impl<C, A, B, TA, TB, EA, EB> InboundUpgrade<C> for SelectUpgrade<A, B>
+impl<A, B, TA, TB, EA, EB> InboundUpgrade for SelectUpgrade<A, B>
 where
-    A: InboundUpgrade<C, Output = TA, Error = EA>,
-    B: InboundUpgrade<C, Output = TB, Error = EB>,
+    A: InboundUpgrade<Output = TA, Error = EA>,
+    B: InboundUpgrade<Output = TB, Error = EB>,
 {
     type Output = EitherOutput<TA, TB>;
     type Error = EitherError<EA, EB>;
     type Future = EitherFuture2<A::Future, B::Future>;
 
-    fn upgrade_inbound(self, sock: C, info: Self::Info) -> Self::Future {
+    fn upgrade_inbound(self, sock: BoxAsyncReadWrite, info: Self::Info) -> Self::Future {
         match info {
             EitherName::A(info) => EitherFuture2::A(self.0.upgrade_inbound(sock, info)),
             EitherName::B(info) => EitherFuture2::B(self.1.upgrade_inbound(sock, info))
@@ -72,16 +72,16 @@ where
     }
 }
 
-impl<C, A, B, TA, TB, EA, EB> OutboundUpgrade<C> for SelectUpgrade<A, B>
+impl<A, B, TA, TB, EA, EB> OutboundUpgrade for SelectUpgrade<A, B>
 where
-    A: OutboundUpgrade<C, Output = TA, Error = EA>,
-    B: OutboundUpgrade<C, Output = TB, Error = EB>,
+    A: OutboundUpgrade<Output = TA, Error = EA>,
+    B: OutboundUpgrade<Output = TB, Error = EB>,
 {
     type Output = EitherOutput<TA, TB>;
     type Error = EitherError<EA, EB>;
     type Future = EitherFuture2<A::Future, B::Future>;
 
-    fn upgrade_outbound(self, sock: C, info: Self::Info) -> Self::Future {
+    fn upgrade_outbound(self, sock: BoxAsyncReadWrite, info: Self::Info) -> Self::Future {
         match info {
             EitherName::A(info) => EitherFuture2::A(self.0.upgrade_outbound(sock, info)),
             EitherName::B(info) => EitherFuture2::B(self.1.upgrade_outbound(sock, info))

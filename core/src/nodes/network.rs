@@ -580,7 +580,7 @@ where
     TTrans::Error: Send + 'static,
     TTrans::ListenerUpgrade: Send + 'static,
     THandler: IntoNodeHandler<(TConnInfo, ConnectedPoint)> + Send + 'static,
-    THandler::Handler: NodeHandler<Substream = Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent, Error = THandlerErr> + Send + 'static,
+    THandler::Handler: NodeHandler<InEvent = TInEvent, OutEvent = TOutEvent, Error = THandlerErr> + Send + 'static,
     <THandler::Handler as NodeHandler>::OutboundOpenInfo: Send + 'static, // TODO: shouldn't be necessary
     THandlerErr: error::Error + Send + 'static,
     TMuxer: StreamMuxer + Send + Sync + 'static,
@@ -675,13 +675,12 @@ impl<'a> IncomingInfo<'a> {
     }
 }
 
-impl<TTrans, TInEvent, TOutEvent, TMuxer, THandler, THandlerErr, TConnInfo, TPeerId>
+impl<TTrans, TInEvent, TOutEvent, THandler, THandlerErr, TConnInfo, TPeerId>
     Network<TTrans, TInEvent, TOutEvent, THandler, THandlerErr, TConnInfo, TPeerId>
 where
     TTrans: Transport + Clone,
-    TMuxer: StreamMuxer,
     THandler: IntoNodeHandler<(TConnInfo, ConnectedPoint)> + Send + 'static,
-    THandler::Handler: NodeHandler<Substream = Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent, Error = THandlerErr> + Send + 'static,
+    THandler::Handler: NodeHandler<InEvent = TInEvent, OutEvent = TOutEvent, Error = THandlerErr> + Send + 'static,
     <THandler::Handler as NodeHandler>::OutboundOpenInfo: Send + 'static, // TODO: shouldn't be necessary
     THandlerErr: error::Error + Send + 'static,
     TConnInfo: fmt::Debug + ConnectionInfo<PeerId = TPeerId> + Send + 'static,
@@ -989,7 +988,7 @@ where
         TInEvent: Send + 'static,
         TOutEvent: Send + 'static,
         THandler: IntoNodeHandler<(TConnInfo, ConnectedPoint)> + Send + 'static,
-        THandler::Handler: NodeHandler<Substream = Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent, Error = THandlerErr> + Send + 'static,
+        THandler::Handler: NodeHandler<InEvent = TInEvent, OutEvent = TOutEvent, Error = THandlerErr> + Send + 'static,
         THandlerErr: error::Error + Send + 'static,
         TConnInfo: Clone,
         TPeerId: AsRef<[u8]> + Send + 'static,
@@ -1468,7 +1467,7 @@ where
     TInEvent: Send + 'static,
     TOutEvent: Send + 'static,
     THandler: IntoNodeHandler<(TConnInfo, ConnectedPoint)> + Send + 'static,
-    THandler::Handler: NodeHandler<Substream = Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent, Error = THandlerErr> + Send + 'static,
+    THandler::Handler: NodeHandler<InEvent = TInEvent, OutEvent = TOutEvent, Error = THandlerErr> + Send + 'static,
     <THandler::Handler as NodeHandler>::OutboundOpenInfo: Send + 'static, // TODO: shouldn't be necessary
     THandlerErr: error::Error + Send + 'static,
     TConnInfo: fmt::Debug + ConnectionInfo<PeerId = TPeerId> + Send + 'static,
@@ -1763,7 +1762,7 @@ where
     TMuxer::OutboundSubstream: Send,
     TMuxer::Substream: Send,
     THandler: IntoNodeHandler<(TConnInfo, ConnectedPoint)> + Send + 'static,
-    THandler::Handler: NodeHandler<Substream = Substream<TMuxer>, InEvent = TInEvent, OutEvent = TOutEvent, Error = THandlerErr> + Send + 'static,
+    THandler::Handler: NodeHandler<InEvent = TInEvent, OutEvent = TOutEvent, Error = THandlerErr> + Send + 'static,
     <THandler::Handler as NodeHandler>::OutboundOpenInfo: Send + 'static, // TODO: shouldn't be necessary
     THandlerErr: error::Error + Send + 'static,
     TInEvent: Send + 'static,

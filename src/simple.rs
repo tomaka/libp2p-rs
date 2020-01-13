@@ -63,7 +63,7 @@ impl<F> UpgradeInfo for SimpleProtocol<F> {
     }
 }
 
-impl<C, F, O, A, E> InboundUpgrade<C> for SimpleProtocol<F>
+impl<C, F, O, A, E> InboundUpgrade for SimpleProtocol<F>
 where
     C: AsyncRead + AsyncWrite,
     F: Fn(C) -> O,
@@ -79,7 +79,7 @@ where
     }
 }
 
-impl<C, F, O, A, E> OutboundUpgrade<C> for SimpleProtocol<F>
+impl<C, F, O, A, E> OutboundUpgrade for SimpleProtocol<F>
 where
     C: AsyncRead + AsyncWrite,
     F: Fn(C) -> O,

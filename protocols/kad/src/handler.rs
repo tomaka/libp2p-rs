@@ -433,7 +433,6 @@ where
     type InEvent = KademliaHandlerIn<TUserData>;
     type OutEvent = KademliaHandlerEvent<TUserData>;
     type Error = io::Error; // TODO: better error type?
-    type Substream = TSubstream;
     type InboundProtocol = upgrade::EitherUpgrade<KademliaProtocolConfig, upgrade::DeniedUpgrade>;
     type OutboundProtocol = KademliaProtocolConfig;
     // Message of the request to send to the remote, and user data if we expect an answer.
@@ -450,7 +449,7 @@ where
 
     fn inject_fully_negotiated_outbound(
         &mut self,
-        protocol: <Self::OutboundProtocol as OutboundUpgrade<Negotiated<TSubstream>>>::Output,
+        protocol: <Self::OutboundProtocol as OutboundUpgrade>::Output,
         (msg, user_data): Self::OutboundOpenInfo,
     ) {
         self.substreams
@@ -459,7 +458,7 @@ where
 
     fn inject_fully_negotiated_inbound(
         &mut self,
-        protocol: <Self::InboundProtocol as InboundUpgrade<Negotiated<TSubstream>>>::Output,
+        protocol: <Self::InboundProtocol as InboundUpgrade>::Output,
     ) {
         // If `self.allow_listening` is false, then we produced a `DeniedUpgrade` and `protocol`
         // is a `Void`.

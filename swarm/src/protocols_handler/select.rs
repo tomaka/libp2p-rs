@@ -29,7 +29,6 @@ use crate::protocols_handler::{
 use futures::prelude::*;
 use libp2p_core::{
     ConnectedPoint,
-    Negotiated,
     PeerId,
     either::{EitherError, EitherOutput},
     upgrade::{InboundUpgrade, OutboundUpgrade, EitherUpgrade, SelectUpgrade, UpgradeError}
@@ -63,10 +62,10 @@ where
     TProto1::Handler: ProtocolsHandler<Substream = TSubstream>,
     TProto2::Handler: ProtocolsHandler<Substream = TSubstream>,
     TSubstream: AsyncRead + AsyncWrite + Unpin,
-    <TProto1::Handler as ProtocolsHandler>::InboundProtocol: InboundUpgrade<Negotiated<TSubstream>>,
-    <TProto2::Handler as ProtocolsHandler>::InboundProtocol: InboundUpgrade<Negotiated<TSubstream>>,
-    <TProto1::Handler as ProtocolsHandler>::OutboundProtocol: OutboundUpgrade<Negotiated<TSubstream>>,
-    <TProto2::Handler as ProtocolsHandler>::OutboundProtocol: OutboundUpgrade<Negotiated<TSubstream>>
+    <TProto1::Handler as ProtocolsHandler>::InboundProtocol: InboundUpgrade,
+    <TProto2::Handler as ProtocolsHandler>::InboundProtocol: InboundUpgrade,
+    <TProto1::Handler as ProtocolsHandler>::OutboundProtocol: OutboundUpgrade,
+    <TProto2::Handler as ProtocolsHandler>::OutboundProtocol: OutboundUpgrade
 {
     type Handler = ProtocolsHandlerSelect<TProto1::Handler, TProto2::Handler>;
 
@@ -105,18 +104,16 @@ impl<TProto1, TProto2> ProtocolsHandlerSelect<TProto1, TProto2> {
 impl<TSubstream, TProto1, TProto2>
     ProtocolsHandler for ProtocolsHandlerSelect<TProto1, TProto2>
 where
-    TProto1: ProtocolsHandler<Substream = TSubstream>,
-    TProto2: ProtocolsHandler<Substream = TSubstream>,
-    TSubstream: AsyncRead + AsyncWrite + Unpin,
-    TProto1::InboundProtocol: InboundUpgrade<Negotiated<TSubstream>>,
-    TProto2::InboundProtocol: InboundUpgrade<Negotiated<TSubstream>>,
-    TProto1::OutboundProtocol: OutboundUpgrade<Negotiated<TSubstream>>,
-    TProto2::OutboundProtocol: OutboundUpgrade<Negotiated<TSubstream>>
+    TProto1: ProtocolsHandler,
+    TProto2: ProtocolsHandler,
+    TProto1::InboundProtocol: InboundUpgrade,
+    TProto2::InboundProtocol: InboundUpgrade,
+    TProto1::OutboundProtocol: OutboundUpgrade,
+    TProto2::OutboundProtocol: OutboundUpgrade,
 {
     type InEvent = EitherOutput<TProto1::InEvent, TProto2::InEvent>;
     type OutEvent = EitherOutput<TProto1::OutEvent, TProto2::OutEvent>;
     type Error = EitherError<TProto1::Error, TProto2::Error>;
-    type Substream = TSubstream;
     type InboundProtocol = SelectUpgrade<<TProto1 as ProtocolsHandler>::InboundProtocol, <TProto2 as ProtocolsHandler>::InboundProtocol>;
     type OutboundProtocol = EitherUpgrade<TProto1::OutboundProtocol, TProto2::OutboundProtocol>;
     type OutboundOpenInfo = EitherOutput<TProto1::OutboundOpenInfo, TProto2::OutboundOpenInfo>;
@@ -130,7 +127,7 @@ where
         SubstreamProtocol::new(choice).with_timeout(timeout)
     }
 
-    fn inject_fully_negotiated_outbound(&mut self, protocol: <Self::OutboundProtocol as OutboundUpgrade<Negotiated<TSubstream>>>::Output, endpoint: Self::OutboundOpenInfo) {
+    fn inject_fully_negotiated_outbound(&mut self, protocol: <Self::OutboundProtocol as OutboundUpgrade>::Output, endpoint: Self::OutboundOpenInfo) {
         match (protocol, endpoint) {
             (EitherOutput::First(protocol), EitherOutput::First(info)) =>
                 self.proto1.inject_fully_negotiated_outbound(protocol, info),
@@ -143,7 +140,7 @@ where
         }
     }
 
-    fn inject_fully_negotiated_inbound(&mut self, protocol: <Self::InboundProtocol as InboundUpgrade<Negotiated<TSubstream>>>::Output) {
+    fn inject_fully_negotiated_inbound(&mut self, protocol: <Self::InboundProtocol as InboundUpgrade>::Output) {
         match protocol {
             EitherOutput::First(protocol) =>
                 self.proto1.inject_fully_negotiated_inbound(protocol),
@@ -161,7 +158,7 @@ where
     }
 
     #[inline]
-    fn inject_dial_upgrade_error(&mut self, info: Self::OutboundOpenInfo, error: ProtocolsHandlerUpgrErr<<Self::OutboundProtocol as OutboundUpgrade<Negotiated<Self::Substream>>>::Error>) {
+    fn inject_dial_upgrade_error(&mut self, info: Self::OutboundOpenInfo, error: ProtocolsHandlerUpgrErr<<Self::OutboundProtocol as OutboundUpgrade>::Error>) {
         match (info, error) {
             (EitherOutput::First(info), ProtocolsHandlerUpgrErr::Timer) => {
                 self.proto1.inject_dial_upgrade_error(info, ProtocolsHandlerUpgrErr::Timer)
@@ -202,7 +199,6 @@ where
     }
 
     fn poll(&mut self, cx: &mut Context) -> Poll<ProtocolsHandlerEvent<Self::OutboundProtocol, Self::OutboundOpenInfo, Self::OutEvent, Self::Error>> {
-
         match self.proto1.poll(cx) {
             Poll::Ready(ProtocolsHandlerEvent::Custom(event)) => {
                 return Poll::Ready(ProtocolsHandlerEvent::Custom(EitherOutput::First(event)));

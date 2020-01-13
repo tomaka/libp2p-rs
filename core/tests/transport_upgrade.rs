@@ -42,7 +42,7 @@ impl UpgradeInfo for HelloUpgrade {
     }
 }
 
-impl<C> InboundUpgrade<C> for HelloUpgrade
+impl<C> InboundUpgrade for HelloUpgrade
 where
     C: AsyncRead + AsyncWrite + Send + Unpin + 'static
 {
@@ -60,7 +60,7 @@ where
     }
 }
 
-impl<C> OutboundUpgrade<C> for HelloUpgrade
+impl<C> OutboundUpgrade for HelloUpgrade
 where
     C: AsyncWrite + AsyncRead + Send + Unpin + 'static,
 {

@@ -47,7 +47,6 @@ mod select;
 use futures::prelude::*;
 use libp2p_core::{
     ConnectedPoint,
-    Negotiated,
     PeerId,
     upgrade::{self, InboundUpgrade, OutboundUpgrade, UpgradeError},
 };
@@ -103,9 +102,9 @@ pub trait ProtocolsHandler {
     /// The type of substreams on which the protocol(s) are negotiated.
     type Substream: AsyncRead + AsyncWrite + Unpin;
     /// The inbound upgrade for the protocol(s) used by the handler.
-    type InboundProtocol: InboundUpgrade<Negotiated<Self::Substream>>;
+    type InboundProtocol: InboundUpgrade;
     /// The outbound upgrade for the protocol(s) used by the handler.
-    type OutboundProtocol: OutboundUpgrade<Negotiated<Self::Substream>>;
+    type OutboundProtocol: OutboundUpgrade;
     /// The type of additional information passed to an `OutboundSubstreamRequest`.
     type OutboundOpenInfo;
 
@@ -121,7 +120,7 @@ pub trait ProtocolsHandler {
     /// Injects the output of a successful upgrade on a new inbound substream.
     fn inject_fully_negotiated_inbound(
         &mut self,
-        protocol: <Self::InboundProtocol as InboundUpgrade<Negotiated<Self::Substream>>>::Output
+        protocol: <Self::InboundProtocol as InboundUpgrade>::Output
     );
 
     /// Injects the output of a successful upgrade on a new outbound substream.
@@ -130,7 +129,7 @@ pub trait ProtocolsHandler {
     /// [`ProtocolsHandlerEvent::OutboundSubstreamRequest`].
     fn inject_fully_negotiated_outbound(
         &mut self,
-        protocol: <Self::OutboundProtocol as OutboundUpgrade<Negotiated<Self::Substream>>>::Output,
+        protocol: <Self::OutboundProtocol as OutboundUpgrade>::Output,
         info: Self::OutboundOpenInfo
     );
 
@@ -142,7 +141,7 @@ pub trait ProtocolsHandler {
         &mut self,
         info: Self::OutboundOpenInfo,
         error: ProtocolsHandlerUpgrErr<
-            <Self::OutboundProtocol as OutboundUpgrade<Negotiated<Self::Substream>>>::Error
+            <Self::OutboundProtocol as OutboundUpgrade>::Error
         >
     );
 

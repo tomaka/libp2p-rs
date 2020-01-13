@@ -159,7 +159,7 @@ impl<I, O, H, E, HE, T, C> Manager<I, O, H, E, HE, T, C> {
     where
         F: Future<Output = Result<(C, M), E>> + Send + 'static,
         H: IntoNodeHandler<C> + Send + 'static,
-        H::Handler: NodeHandler<Substream = Substream<M>, InEvent = I, OutEvent = O, Error = HE> + Send + 'static,
+        H::Handler: NodeHandler<InEvent = I, OutEvent = O, Error = HE> + Send + 'static,
         E: error::Error + Send + 'static,
         HE: error::Error + Send + 'static,
         I: Send + 'static,
@@ -193,7 +193,7 @@ impl<I, O, H, E, HE, T, C> Manager<I, O, H, E, HE, T, C> {
     pub fn add_connection<M, Handler>(&mut self, user_data: T, muxer: M, handler: Handler) -> TaskId
     where
         H: IntoNodeHandler<C, Handler = Handler> + Send + 'static,
-        Handler: NodeHandler<Substream = Substream<M>, InEvent = I, OutEvent = O, Error = HE> + Send + 'static,
+        Handler: NodeHandler<InEvent = I, OutEvent = O, Error = HE> + Send + 'static,
         E: error::Error + Send + 'static,
         HE: error::Error + Send + 'static,
         I: Send + 'static,

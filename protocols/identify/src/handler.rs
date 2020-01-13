@@ -97,7 +97,6 @@ where
     type InEvent = ();
     type OutEvent = IdentifyHandlerEvent<TSubstream>;
     type Error = ReadOneError;
-    type Substream = TSubstream;
     type InboundProtocol = IdentifyProtocolConfig;
     type OutboundProtocol = IdentifyProtocolConfig;
     type OutboundOpenInfo = ();
@@ -128,7 +127,7 @@ where
         &mut self,
         _info: Self::OutboundOpenInfo,
         err: ProtocolsHandlerUpgrErr<
-            <Self::OutboundProtocol as OutboundUpgrade<Self::Substream>>::Error
+            <Self::OutboundProtocol as OutboundUpgrade>::Error
         >
     ) {
         self.events.push(IdentifyHandlerEvent::IdentificationError(err));

@@ -47,7 +47,6 @@ where
     type InEvent = ();      // TODO: cannot be Void (https://github.com/servo/rust-smallvec/issues/139)
     type OutEvent = ();      // TODO: cannot be Void (https://github.com/servo/rust-smallvec/issues/139)
     type Error = io::Error;
-    type Substream = TSubstream;
     type InboundProtocol = upgrade::DeniedUpgrade;
     type OutboundProtocol = upgrade::DeniedUpgrade;
     type OutboundOpenInfo = ();      // TODO: cannot be Void (https://github.com/servo/rust-smallvec/issues/139)
@@ -58,12 +57,12 @@ where
 
     fn inject_fully_negotiated_inbound(
         &mut self,
-        _: <Self::InboundProtocol as upgrade::InboundUpgrade<Self::Substream>>::Output
+        _: <Self::InboundProtocol as upgrade::InboundUpgrade>::Output
     ) { panic!() }
 
     fn inject_fully_negotiated_outbound(
         &mut self,
-        _: <Self::OutboundProtocol as upgrade::OutboundUpgrade<Self::Substream>>::Output,
+        _: <Self::OutboundProtocol as upgrade::OutboundUpgrade>::Output,
         _: Self::OutboundOpenInfo
     ) { panic!() }
 
@@ -71,7 +70,7 @@ where
         panic!()
     }
 
-    fn inject_dial_upgrade_error(&mut self, _: Self::OutboundOpenInfo, _: ProtocolsHandlerUpgrErr<<Self::OutboundProtocol as upgrade::OutboundUpgrade<Self::Substream>>::Error>) {
+    fn inject_dial_upgrade_error(&mut self, _: Self::OutboundOpenInfo, _: ProtocolsHandlerUpgrErr<<Self::OutboundProtocol as upgrade::OutboundUpgrade>::Error>) {
 
     }
 

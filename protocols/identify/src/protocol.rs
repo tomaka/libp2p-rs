@@ -121,7 +121,7 @@ impl UpgradeInfo for IdentifyProtocolConfig {
     }
 }
 
-impl<C> InboundUpgrade<C> for IdentifyProtocolConfig
+impl<C> InboundUpgrade for IdentifyProtocolConfig
 where
     C: AsyncRead + AsyncWrite + Unpin,
 {
@@ -135,7 +135,7 @@ where
     }
 }
 
-impl<C> OutboundUpgrade<C> for IdentifyProtocolConfig
+impl<C> OutboundUpgrade for IdentifyProtocolConfig
 where
     C: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {

@@ -183,14 +183,10 @@ impl<TSubstream> PingHandler<TSubstream> {
     }
 }
 
-impl<TSubstream> ProtocolsHandler for PingHandler<TSubstream>
-where
-    TSubstream: AsyncRead + AsyncWrite + Send + Unpin + 'static,
-{
+impl ProtocolsHandler for PingHandler {
     type InEvent = Void;
     type OutEvent = PingResult;
     type Error = PingFailure;
-    type Substream = TSubstream;
     type InboundProtocol = protocol::Ping;
     type OutboundProtocol = protocol::Ping;
     type OutboundOpenInfo = ();

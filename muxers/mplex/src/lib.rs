@@ -155,7 +155,7 @@ impl UpgradeInfo for MplexConfig {
     }
 }
 
-impl<C> InboundUpgrade<C> for MplexConfig
+impl<C> InboundUpgrade for MplexConfig
 where
     C: AsyncRead + AsyncWrite + Unpin,
 {
@@ -168,7 +168,7 @@ where
     }
 }
 
-impl<C> OutboundUpgrade<C> for MplexConfig
+impl<C> OutboundUpgrade for MplexConfig
 where
     C: AsyncRead + AsyncWrite + Unpin,
 {

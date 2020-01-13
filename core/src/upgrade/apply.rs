@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::{ConnectedPoint, Negotiated};
-use crate::upgrade::{InboundUpgrade, OutboundUpgrade, UpgradeError, ProtocolName};
+use crate::upgrade::{BoxAsyncReadWrite, InboundUpgrade, OutboundUpgrade, UpgradeError, ProtocolName};
 use futures::{future::Either, prelude::*, compat::Compat, compat::Compat01As03, compat::Future01CompatExt};
 use log::debug;
 use multistream_select::{self, DialerSelectFuture, ListenerSelectFuture};
@@ -28,11 +28,10 @@ use std::{iter, mem, pin::Pin, task::Context, task::Poll};
 pub use multistream_select::Version;
 
 /// Applies an upgrade to the inbound and outbound direction of a connection or substream.
-pub fn apply<C, U>(conn: C, up: U, cp: ConnectedPoint, v: Version)
-    -> Either<InboundUpgradeApply<C, U>, OutboundUpgradeApply<C, U>>
+pub fn apply<U>(conn: BoxAsyncReadWrite, up: U, cp: ConnectedPoint, v: Version)
+    -> Either<InboundUpgradeApply<U>, OutboundUpgradeApply<U>>
 where
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: InboundUpgrade<Negotiated<C>> + OutboundUpgrade<Negotiated<C>>,
+    U: InboundUpgrade + OutboundUpgrade,
 {
     if cp.is_listener() {
         Either::Left(apply_inbound(conn, up))
@@ -42,10 +41,9 @@ where
 }
 
 /// Tries to perform an upgrade on an inbound connection or substream.
-pub fn apply_inbound<C, U>(conn: C, up: U) -> InboundUpgradeApply<C, U>
+pub fn apply_inbound<U>(conn: BoxAsyncReadWrite, up: U) -> InboundUpgradeApply<U>
 where
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: InboundUpgrade<Negotiated<C>>,
+    U: InboundUpgrade,
 {
     let iter = up.protocol_info().into_iter().map(NameWrap as fn(_) -> NameWrap<_>);
     let future = multistream_select::listener_select_proto(Compat::new(conn), iter).compat();
@@ -55,10 +53,9 @@ where
 }
 
 /// Tries to perform an upgrade on an outbound connection or substream.
-pub fn apply_outbound<C, U>(conn: C, up: U, v: Version) -> OutboundUpgradeApply<C, U>
+pub fn apply_outbound<U>(conn: BoxAsyncReadWrite, up: U, v: Version) -> OutboundUpgradeApply<U>
 where
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: OutboundUpgrade<Negotiated<C>>
+    U: OutboundUpgrade
 {
     let iter = up.protocol_info().into_iter().map(NameWrap as fn(_) -> NameWrap<_>);
     let future = multistream_select::dialer_select_proto(Compat::new(conn), iter, v).compat();
@@ -68,21 +65,19 @@ where
 }
 
 /// Future returned by `apply_inbound`. Drives the upgrade process.
-pub struct InboundUpgradeApply<C, U>
+pub struct InboundUpgradeApply<U>
 where
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: InboundUpgrade<Negotiated<C>>
+    U: InboundUpgrade
 {
-    inner: InboundUpgradeApplyState<C, U>
+    inner: InboundUpgradeApplyState<U>
 }
 
-enum InboundUpgradeApplyState<C, U>
+enum InboundUpgradeApplyState<U>
 where
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: InboundUpgrade<Negotiated<C>>,
+    U: InboundUpgrade,
 {
     Init {
-        future: Compat01As03<ListenerSelectFuture<Compat<C>, NameWrap<U::Info>>>,
+        future: Compat01As03<ListenerSelectFuture<Compat<BoxAsyncReadWrite>, NameWrap<U::Info>>>,
         upgrade: U,
     },
     Upgrade {
@@ -91,17 +86,15 @@ where
     Undefined
 }
 
-impl<C, U> Unpin for InboundUpgradeApply<C, U>
+impl<U> Unpin for InboundUpgradeApply<U>
 where
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: InboundUpgrade<Negotiated<C>>,
+    U: InboundUpgrade,
 {
 }
 
-impl<C, U> Future for InboundUpgradeApply<C, U>
+impl<U> Future for InboundUpgradeApply<U>
 where
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: InboundUpgrade<Negotiated<C>>,
+    U: InboundUpgrade,
 {
     type Output = Result<U::Output, UpgradeError<U::Error>>;
 
@@ -117,7 +110,7 @@ where
                         }
                     };
                     self.inner = InboundUpgradeApplyState::Upgrade {
-                        future: Box::pin(upgrade.upgrade_inbound(Compat01As03::new(io), info.0))
+                        future: Box::pin(upgrade.upgrade_inbound(Box::pin(Compat01As03::new(io)), info.0))
                     };
                 }
                 InboundUpgradeApplyState::Upgrade { mut future } => {
@@ -144,21 +137,19 @@ where
 }
 
 /// Future returned by `apply_outbound`. Drives the upgrade process.
-pub struct OutboundUpgradeApply<C, U>
+pub struct OutboundUpgradeApply<U>
 where
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: OutboundUpgrade<Negotiated<C>>
+    U: OutboundUpgrade
 {
-    inner: OutboundUpgradeApplyState<C, U>
+    inner: OutboundUpgradeApplyState<U>
 }
 
-enum OutboundUpgradeApplyState<C, U>
+enum OutboundUpgradeApplyState<U>
 where
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: OutboundUpgrade<Negotiated<C>>
+    U: OutboundUpgrade
 {
     Init {
-        future: Compat01As03<DialerSelectFuture<Compat<C>, NameWrapIter<<U::InfoIter as IntoIterator>::IntoIter>>>,
+        future: Compat01As03<DialerSelectFuture<Compat<BoxAsyncReadWrite>, NameWrapIter<<U::InfoIter as IntoIterator>::IntoIter>>>,
         upgrade: U
     },
     Upgrade {
@@ -167,17 +158,15 @@ where
     Undefined
 }
 
-impl<C, U> Unpin for OutboundUpgradeApply<C, U>
+impl<U> Unpin for OutboundUpgradeApply<U>
 where
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: OutboundUpgrade<Negotiated<C>>,
+    U: OutboundUpgrade,
 {
 }
 
-impl<C, U> Future for OutboundUpgradeApply<C, U>
+impl<U> Future for OutboundUpgradeApply<U>
 where
-    C: AsyncRead + AsyncWrite + Unpin,
-    U: OutboundUpgrade<Negotiated<C>>,
+    U: OutboundUpgrade,
 {
     type Output = Result<U::Output, UpgradeError<U::Error>>;
 
@@ -193,7 +182,7 @@ where
                         }
                     };
                     self.inner = OutboundUpgradeApplyState::Upgrade {
-                        future: Box::pin(upgrade.upgrade_outbound(Compat01As03::new(connection), info.0))
+                        future: Box::pin(upgrade.upgrade_outbound(Box::pin(Compat01As03::new(connection)), info.0))
                     };
                 }
                 OutboundUpgradeApplyState::Upgrade { mut future } => {

@@ -56,7 +56,7 @@ pub struct Task<F, M, H, I, O, E, C>
 where
     M: StreamMuxer,
     H: IntoNodeHandler<C>,
-    H::Handler: NodeHandler<Substream = Substream<M>>
+    H::Handler: NodeHandler
 {
     /// The ID of this task.
     id: TaskId,
@@ -78,7 +78,7 @@ impl<F, M, H, I, O, E, C> Task<F, M, H, I, O, E, C>
 where
     M: StreamMuxer,
     H: IntoNodeHandler<C>,
-    H::Handler: NodeHandler<Substream = Substream<M>>
+    H::Handler: NodeHandler
 {
     /// Create a new task to connect and handle some node.
     pub fn new (
@@ -119,7 +119,7 @@ enum State<F, M, H, I, O, E, C>
 where
     M: StreamMuxer,
     H: IntoNodeHandler<C>,
-    H::Handler: NodeHandler<Substream = Substream<M>>
+    H::Handler: NodeHandler
 {
     /// Future to resolve to connect to the node.
     Future {
@@ -157,7 +157,7 @@ impl<F, M, H, I, O, E, C> Unpin for Task<F, M, H, I, O, E, C>
 where
     M: StreamMuxer,
     H: IntoNodeHandler<C>,
-    H::Handler: NodeHandler<Substream = Substream<M>>
+    H::Handler: NodeHandler
 {
 }
 
@@ -166,7 +166,7 @@ where
     M: StreamMuxer,
     F: Future<Output = Result<(C, M), E>>,
     H: IntoNodeHandler<C>,
-    H::Handler: NodeHandler<Substream = Substream<M>, InEvent = I, OutEvent = O>
+    H::Handler: NodeHandler<InEvent = I, OutEvent = O>
 {
     type Output = ();
 

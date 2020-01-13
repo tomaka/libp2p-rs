@@ -44,7 +44,7 @@ impl UpgradeInfo for DeflateConfig {
     }
 }
 
-impl<C> InboundUpgrade<C> for DeflateConfig
+impl<C> InboundUpgrade for DeflateConfig
 where
     C: AsyncRead + AsyncWrite,
 {
@@ -57,7 +57,7 @@ where
     }
 }
 
-impl<C> OutboundUpgrade<C> for DeflateConfig
+impl<C> OutboundUpgrade for DeflateConfig
 where
     C: AsyncRead + AsyncWrite,
 {
