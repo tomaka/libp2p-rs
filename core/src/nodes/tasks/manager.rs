@@ -65,7 +65,7 @@ pub struct Manager<I, O, H, E, HE, T, C = PeerId> {
 
     /// Threads pool where we spawn the nodes' tasks. If `None`, then we push tasks to the
     /// `local_spawns` list instead.
-    threads_pool: Option<ThreadPool>,
+    threads_pool: Option<tokio::runtime::Runtime>,
 
     /// If no executor is available, we move tasks to this set, and futures are polled on the
     /// current thread instead.
@@ -137,9 +137,7 @@ impl<I, O, H, E, HE, T, C> Manager<I, O, H, E, HE, T, C> {
     /// Creates a new task manager.
     pub fn new() -> Self {
         let (tx, rx) = mpsc::channel(1);
-        let threads_pool = ThreadPool::builder()
-            .name_prefix("libp2p-nodes-")
-            .create().ok();
+        let threads_pool = tokio::runtime::Runtime::new().ok();
 
         Self {
             tasks: FnvHashMap::default(),
@@ -177,7 +175,7 @@ impl<I, O, H, E, HE, T, C> Manager<I, O, H, E, HE, T, C> {
 
         let task = Box::pin(Task::new(task_id, self.events_tx.clone(), rx, future, handler));
         if let Some(threads_pool) = &mut self.threads_pool {
-            threads_pool.spawn_ok(task);
+            threads_pool.spawn(task);
         } else {
             self.local_spawns.push(task);
         }
@@ -212,12 +210,11 @@ impl<I, O, H, E, HE, T, C> Manager<I, O, H, E, HE, T, C> {
         let task: Task<Pin<Box<futures::future::Pending<_>>>, _, _, _, _, _, _> =
             Task::node(task_id, self.events_tx.clone(), rx, HandledNode::new(muxer, handler));
 
-        /*if let Some(threads_pool) = &mut self.threads_pool {
-            threads_pool.spawn_ok(Box::pin(task));
+        if let Some(threads_pool) = &mut self.threads_pool {
+            threads_pool.spawn(Box::pin(task));
         } else {
             self.local_spawns.push(Box::pin(task));
-        }*/
-        tokio::spawn(Box::pin(task));
+        }
 
         task_id
     }
