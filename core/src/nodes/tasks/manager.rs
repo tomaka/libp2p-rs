@@ -212,11 +212,12 @@ impl<I, O, H, E, HE, T, C> Manager<I, O, H, E, HE, T, C> {
         let task: Task<Pin<Box<futures::future::Pending<_>>>, _, _, _, _, _, _> =
             Task::node(task_id, self.events_tx.clone(), rx, HandledNode::new(muxer, handler));
 
-        if let Some(threads_pool) = &mut self.threads_pool {
+        /*if let Some(threads_pool) = &mut self.threads_pool {
             threads_pool.spawn_ok(Box::pin(task));
         } else {
             self.local_spawns.push(Box::pin(task));
-        }
+        }*/
+        tokio::spawn(Box::pin(task));
 
         task_id
     }

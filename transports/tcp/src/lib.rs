@@ -36,7 +36,7 @@
 //! The `TcpConfig` structs implements the `Transport` trait of the `swarm` library. See the
 //! documentation of `swarm` and of libp2p in general to learn how to use the `Transport` trait.
 
-use async_std::net::TcpStream;
+use tokio::net::TcpStream;
 use futures::{future::{self, Ready}, prelude::*};
 use futures_timer::Delay;
 use get_if_addrs::{IfAddr, get_if_addrs};
@@ -112,7 +112,7 @@ impl Transport for TcpConfig {
         async fn do_listen(cfg: TcpConfig, socket_addr: SocketAddr)
             -> Result<impl Stream<Item = Result<ListenerEvent<Ready<Result<TcpTransStream, io::Error>>>, io::Error>>, io::Error>
         {
-            let listener = async_std::net::TcpListener::bind(&socket_addr).await?;
+            let listener = tokio::net::TcpListener::bind(&socket_addr).await?;
             let local_addr = listener.local_addr()?;
             let port = local_addr.port();
 
@@ -267,7 +267,7 @@ type Buffer = VecDeque<Result<ListenerEvent<Ready<Result<TcpTransStream, io::Err
 /// Stream that listens on an TCP/IP address.
 pub struct TcpListenStream {
     /// The incoming connections.
-    stream: async_std::net::TcpListener,
+    stream: tokio::net::TcpListener,
     /// The current pause if any.
     pause: Option<Delay>,
     /// How long to pause after an error.
@@ -414,21 +414,21 @@ pub struct TcpTransStream {
 
 impl AsyncRead for TcpTransStream {
     fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context, buf: &mut [u8]) -> Poll<Result<usize, io::Error>> {
-        AsyncRead::poll_read(Pin::new(&mut self.inner), cx, buf)
+        tokio::io::AsyncRead::poll_read(Pin::new(&mut self.inner), cx, buf)
     }
 }
 
 impl AsyncWrite for TcpTransStream {
     fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> Poll<Result<usize, io::Error>> {
-        AsyncWrite::poll_write(Pin::new(&mut self.inner), cx, buf)
+        tokio::io::AsyncWrite::poll_write(Pin::new(&mut self.inner), cx, buf)
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), io::Error>> {
-        AsyncWrite::poll_flush(Pin::new(&mut self.inner), cx)
+        tokio::io::AsyncWrite::poll_flush(Pin::new(&mut self.inner), cx)
     }
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), io::Error>> {
-        AsyncWrite::poll_close(Pin::new(&mut self.inner), cx)
+        tokio::io::AsyncWrite::poll_shutdown(Pin::new(&mut self.inner), cx)
     }
 }
 
@@ -486,7 +486,7 @@ mod tests {
             .for_each(|_| futures::future::ready(()));
 
         let client = TcpConfig::new().dial(addr).expect("dialer");
-        async_std::task::block_on(futures::future::join(server, client)).1.unwrap();
+        tokio::task::block_on(futures::future::join(server, client)).1.unwrap();
     }
 
     #[test]
@@ -543,7 +543,7 @@ mod tests {
         let (ready_tx, ready_rx) = futures::channel::oneshot::channel();
         let mut ready_tx = Some(ready_tx);
 
-        async_std::task::spawn(async move {
+        tokio::task::spawn(async move {
             let addr = "/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap();
             let tcp = TcpConfig::new();
             let mut listener = tcp.listen_on(addr).unwrap();
@@ -565,7 +565,7 @@ mod tests {
             }
         });
 
-        async_std::task::block_on(async move {
+        tokio::task::block_on(async move {
             let addr = ready_rx.await.unwrap();
             let tcp = TcpConfig::new();
 

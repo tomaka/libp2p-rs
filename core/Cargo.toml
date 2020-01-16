@@ -32,6 +32,8 @@ rand = "0.7"
 rw-stream-sink = { version = "0.2.0", path = "../misc/rw-stream-sink" }
 sha2 = "0.8.0"
 smallvec = "1.0"
+thiserror = "1.0"
+tokio = { version = "0.2", features = ["rt-core"] }
 unsigned-varint = "0.3"
 void = "1"
 zeroize = "1"
