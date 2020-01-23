@@ -66,7 +66,7 @@ pub use behaviour::{
     NetworkBehaviourEventProcess,
     PollParameters
 };
-pub use boxed::BoxedNetworkBehaviour;
+pub use boxed::AbstractBehaviour;
 pub use protocols_handler::{
     IntoProtocolsHandler,
     IntoProtocolsHandlerSelect,

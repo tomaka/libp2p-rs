@@ -29,32 +29,11 @@ use libp2p_core::upgrade::{self, InboundUpgradeExt, OutboundUpgradeExt};
 use libp2p_core::{nodes::ListenerId, ConnectedPoint, Multiaddr, Negotiated, PeerId};
 use std::{any::Any, error, fmt, io, task::Context, task::Poll};
 
-/// Implementation of the [`NetworkBehaviour`] trait that contains an opaque
-/// [`NetworkBehaviour`].
-pub struct BoxedNetworkBehaviour<TOutEv, TSubstream> {
-    inner: Box<dyn AbstractBehaviour<OutEvent = TOutEv, Substream = TSubstream>>,
-}
-
 pub struct BoxedProtocolsHandler<TSubstream> {
     inner: Box<dyn AbstractProtocolsHandler<Substream = TSubstream>>,
 }
 
-impl<TOutEv, TSubstream> BoxedNetworkBehaviour<TOutEv, TSubstream> {
-    /// Boxes a `NetworkBehaviour`, turning it into an abstract type.
-    pub fn new<T>(inner: T) -> Self
-    where
-        T: NetworkBehaviour<OutEvent = TOutEv>
-            + 'static
-            + Send
-            + AbstractBehaviour<OutEvent = TOutEv, Substream = TSubstream>, // TODO: put actual bounds?
-    {
-        BoxedNetworkBehaviour {
-            inner: Box::new(inner),
-        }
-    }
-}
-
-impl<TOutEv, TSubstream> NetworkBehaviour for BoxedNetworkBehaviour<TOutEv, TSubstream>
+impl<TOutEv, TSubstream> NetworkBehaviour for Box<dyn AbstractBehaviour<OutEvent = TOutEv, Substream = TSubstream>>
 where
     TSubstream: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
@@ -62,19 +41,19 @@ where
     type OutEvent = TOutEv;
 
     fn new_handler(&mut self) -> Self::ProtocolsHandler {
-        self.inner.new_handler()
+        AbstractBehaviour::new_handler(self)
     }
 
     fn addresses_of_peer(&mut self, peer_id: &PeerId) -> Vec<Multiaddr> {
-        self.inner.addresses_of_peer(peer_id)
+        AbstractBehaviour::addresses_of_peer(self, peer_id)
     }
 
     fn inject_connected(&mut self, peer_id: PeerId, endpoint: ConnectedPoint) {
-        self.inner.inject_connected(peer_id, endpoint)
+        AbstractBehaviour::inject_connected(self, peer_id, endpoint)
     }
 
     fn inject_disconnected(&mut self, peer_id: &PeerId, endpoint: ConnectedPoint) {
-        self.inner.inject_disconnected(peer_id, endpoint)
+        AbstractBehaviour::inject_disconnected(self, peer_id, endpoint)
     }
 
     fn inject_replaced(
@@ -83,12 +62,11 @@ where
         closed_endpoint: ConnectedPoint,
         new_endpoint: ConnectedPoint,
     ) {
-        self.inner
-            .inject_replaced(peer_id, closed_endpoint, new_endpoint)
+        AbstractBehaviour::inject_replaced(self, peer_id, closed_endpoint, new_endpoint)
     }
 
     fn inject_node_event(&mut self, peer_id: PeerId, event: Box<dyn Any + Send>) {
-        self.inner.inject_node_event(peer_id, event)
+        AbstractBehaviour::inject_node_event(self, peer_id, event)
     }
 
     fn inject_addr_reach_failure(
@@ -97,31 +75,31 @@ where
         addr: &Multiaddr,
         error: &dyn error::Error,
     ) {
-        self.inner.inject_addr_reach_failure(peer_id, addr, error)
+        AbstractBehaviour::inject_addr_reach_failure(self, peer_id, addr, error)
     }
 
     fn inject_dial_failure(&mut self, peer_id: &PeerId) {
-        self.inner.inject_dial_failure(peer_id)
+        AbstractBehaviour::inject_dial_failure(self, peer_id)
     }
 
     fn inject_new_listen_addr(&mut self, addr: &Multiaddr) {
-        self.inner.inject_new_listen_addr(addr)
+        AbstractBehaviour::inject_new_listen_addr(self, addr)
     }
 
     fn inject_expired_listen_addr(&mut self, addr: &Multiaddr) {
-        self.inner.inject_expired_listen_addr(addr)
+        AbstractBehaviour::inject_expired_listen_addr(self, addr)
     }
 
     fn inject_new_external_addr(&mut self, addr: &Multiaddr) {
-        self.inner.inject_new_external_addr(addr)
+        AbstractBehaviour::inject_new_external_addr(self, addr)
     }
 
     fn inject_listener_error(&mut self, id: ListenerId, err: &(dyn std::error::Error + 'static)) {
-        self.inner.inject_listener_error(id, err)
+        AbstractBehaviour::inject_listener_error(self, id, err)
     }
 
     fn inject_listener_closed(&mut self, id: ListenerId) {
-        self.inner.inject_listener_closed(id)
+        AbstractBehaviour::inject_listener_closed(self, id)
     }
 
     fn poll(
@@ -129,7 +107,7 @@ where
         cx: &mut Context,
         params: &mut impl PollParameters,
     ) -> Poll<NetworkBehaviourAction<Box<dyn Any + Send>, Self::OutEvent>> {
-        let event = match self.inner.poll(cx, params) {
+        let event = match AbstractBehaviour::poll(self, cx, params) {
             Poll::Pending => return Poll::Pending,
             Poll::Ready(e) => e,
         };
