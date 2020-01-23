@@ -61,6 +61,7 @@ mod apply;
 mod denied;
 mod either;
 mod error;
+mod from_fn;
 mod map;
 mod optional;
 mod select;
@@ -78,6 +79,7 @@ pub use self::{
     denied::DeniedUpgrade,
     either::EitherUpgrade,
     error::UpgradeError,
+    from_fn::{from_fn, FromFnUpgrade},
     map::{MapInboundUpgrade, MapOutboundUpgrade, MapInboundUpgradeErr, MapOutboundUpgradeErr},
     optional::OptionalUpgrade,
     select::SelectUpgrade,
@@ -147,7 +149,7 @@ pub trait InboundUpgrade<C>: UpgradeInfo {
     /// Possible error during the handshake.
     type Error;
     /// Future that performs the handshake with the remote.
-    type Future: Future<Output = Result<Self::Output, Self::Error>> + Unpin;
+    type Future: Future<Output = Result<Self::Output, Self::Error>>;
 
     /// After we have determined that the remote supports one of the protocols we support, this
     /// method is called to start the handshake.
@@ -187,7 +189,7 @@ pub trait OutboundUpgrade<C>: UpgradeInfo {
     /// Possible error during the handshake.
     type Error;
     /// Future that performs the handshake with the remote.
-    type Future: Future<Output = Result<Self::Output, Self::Error>> + Unpin;
+    type Future: Future<Output = Result<Self::Output, Self::Error>>;
 
     /// After we have determined that the remote supports one of the protocols we support, this
     /// method is called to start the handshake.
