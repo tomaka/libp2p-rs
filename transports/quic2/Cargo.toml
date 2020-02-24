@@ -1,0 +1,32 @@
+[package]
+name = "libp2p-quic"
+version = "0.15.0"
+authors = ["Parity Technologies <admin@parity.io>"]
+edition = "2018"
+license = "MIT"
+description = "A libp2p transport using QUIC"
+keywords = ["peer-to-peer", "libp2p", "quic", "networking"]
+categories = ["network-programming", "asynchronous"]
+
+[dependencies]
+rustls = { version = "0.16.0", features = ["dangerous_configuration"] }
+libp2p-core = { path = "../../core", version = "0.15.0" }
+log = "0.4.8"
+ipnet = "2.1.0"
+err-derive = "0.2.2"
+futures = "0.3.1"
+quinn-proto = { git = "https://github.com/djc/quinn" }
+async-std = "1.4.0"
+async-macros = "2.0.0"
+futures-timer = "2.0.2"
+env_logger = "0.7.1"
+parking_lot = "0.10.0"
+rcgen = "0.7.0"
+protobuf = "2.10.1"
+yasna = { version = "0.3.1", features = ["num-bigint"] }
+ring = "0.16.10"
+webpki = "0.21.2"
+
+[dev-dependencies]
+tracing-subscriber = "0.1.6"
+tracing = "0.1.12"
