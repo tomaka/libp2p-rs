@@ -22,7 +22,7 @@ use crate::connection::{Connection, ConnectionEvent};
 use crate::error::Error;
 
 use futures::prelude::*;
-use libp2p_core::StreamMuxer;
+use libp2p_core::{StreamMuxer, StreamMuxerEvent};
 use parking_lot::{Mutex, MutexGuard};
 use std::{
     collections::HashMap,
@@ -88,7 +88,7 @@ impl StreamMuxer for QuicMuxer {
     type Substream = quinn_proto::StreamId;
     type Error = Error;
 
-    fn poll_inbound(&self, cx: &mut Context<'_>) -> Poll<Result<Self::Substream, Self::Error>> {
+    fn poll_event(&self, cx: &mut Context<'_>) -> Poll<Result<StreamMuxerEvent<Self::Substream>, Self::Error>> {
         // We use `poll_inbound` to perform the background processing of the entire connection.
         let mut inner = self.inner.lock();
 

@@ -19,8 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use uint::*;
-use libp2p_core::PeerId;
-use multihash::Multihash;
+use libp2p_core::{PeerId, multihash::Multihash};
 use sha2::{Digest, Sha256};
 use sha2::digest::generic_array::{GenericArray, typenum::U32};
 use std::borrow::Borrow;
@@ -93,9 +92,13 @@ impl<T> Into<KeyBytes> for Key<T> {
 }
 
 impl From<Multihash> for Key<Multihash> {
-    fn from(m: Multihash) -> Self {
-        Key::new(m)
-    }
+   fn from(m: Multihash) -> Self {
+       let bytes = KeyBytes(Sha256::digest(&m.to_bytes()));
+       Key {
+           preimage: m,
+           bytes
+       }
+   }
 }
 
 impl From<PeerId> for Key<PeerId> {
@@ -143,8 +146,8 @@ impl KeyBytes {
     where
         U: AsRef<KeyBytes>
     {
-        let a = U256::from(self.0.as_ref());
-        let b = U256::from(other.as_ref().0.as_ref());
+        let a = U256::from(self.0.as_slice());
+        let b = U256::from(other.as_ref().0.as_slice());
         Distance(a ^ b)
     }
 
@@ -154,7 +157,7 @@ impl KeyBytes {
     ///
     /// `self xor other = distance <==> other = self xor distance`
     pub fn for_distance(&self, d: Distance) -> KeyBytes {
-        let key_int = U256::from(self.0.as_ref()) ^ d.0;
+        let key_int = U256::from(self.0.as_slice()) ^ d.0;
         KeyBytes(GenericArray::from(<[u8; 32]>::from(key_int)))
     }
 }
@@ -169,11 +172,20 @@ impl AsRef<KeyBytes> for KeyBytes {
 #[derive(Copy, Clone, PartialEq, Eq, Default, PartialOrd, Ord, Debug)]
 pub struct Distance(pub(super) U256);
 
+impl Distance {
+    /// Returns the integer part of the base 2 logarithm of the [`Distance`].
+    ///
+    /// Returns `None` if the distance is zero.
+    pub fn ilog2(&self) -> Option<u32> {
+        (256 - self.0.leading_zeros()).checked_sub(1)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use quickcheck::*;
-    use multihash::{wrap, Code};
+    use libp2p_core::multihash::Code;
     use rand::Rng;
 
     impl Arbitrary for Key<PeerId> {
@@ -185,7 +197,7 @@ mod tests {
     impl Arbitrary for Key<Multihash> {
         fn arbitrary<G: Gen>(_: &mut G) -> Key<Multihash> {
             let hash = rand::thread_rng().gen::<[u8; 32]>();
-            Key::from(wrap(Code::Sha2_256, &hash))
+            Key::from(Multihash::wrap(Code::Sha2_256.into(), &hash).unwrap())
         }
     }
 

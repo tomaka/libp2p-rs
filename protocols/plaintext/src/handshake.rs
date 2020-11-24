@@ -22,7 +22,7 @@ use crate::PlainText2Config;
 use crate::error::PlainTextError;
 use crate::structs_proto::Exchange;
 
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use futures::prelude::*;
 use futures_codec::Framed;
 use libp2p_core::{PublicKey, PeerId};
@@ -111,21 +111,21 @@ impl HandshakeContext<Local> {
 }
 
 pub async fn handshake<S>(socket: S, config: PlainText2Config)
-    -> Result<(Framed<S, UviBytes<BytesMut>>, Remote), PlainTextError>
+    -> Result<(S, Remote, Bytes), PlainTextError>
 where
     S: AsyncRead + AsyncWrite + Send + Unpin,
 {
     // The handshake messages all start with a variable-length integer indicating the size.
-    let mut socket = Framed::new(socket, UviBytes::default());
+    let mut framed_socket = Framed::new(socket, UviBytes::default());
 
     trace!("starting handshake");
     let context = HandshakeContext::new(config)?;
 
     trace!("sending exchange to remote");
-    socket.send(BytesMut::from(&context.state.exchange_bytes[..])).await?;
+    framed_socket.send(BytesMut::from(&context.state.exchange_bytes[..])).await?;
 
     trace!("receiving the remote's exchange");
-    let context = match socket.next().await {
+    let context = match framed_socket.next().await {
         Some(p) => context.with_remote(p?)?,
         None => {
             debug!("unexpected eof while waiting for remote's exchange");
@@ -134,6 +134,12 @@ where
         }
     };
 
+    // The `Framed` wrapper may have buffered additional data that
+    // was already received but is no longer part of the plaintext
+    // handshake. We need to capture that data before dropping
+    // the `Framed` wrapper via `Framed::into_inner()`.
+    let read_buffer = framed_socket.read_buffer().clone().freeze();
+
     trace!("received exchange from remote; pubkey = {:?}", context.state.public_key);
-    Ok((socket, context.state))
+    Ok((framed_socket.into_inner(), context.state, read_buffer))
 }

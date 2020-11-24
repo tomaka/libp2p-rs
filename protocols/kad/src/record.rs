@@ -23,8 +23,7 @@
 pub mod store;
 
 use bytes::Bytes;
-use libp2p_core::PeerId;
-use multihash::Multihash;
+use libp2p_core::{PeerId, Multiaddr, multihash::Multihash};
 use std::borrow::Borrow;
 use std::hash::{Hash, Hasher};
 use wasm_timer::Instant;
@@ -65,7 +64,7 @@ impl From<Vec<u8>> for Key {
 
 impl From<Multihash> for Key {
     fn from(m: Multihash) -> Key {
-        Key::from(m.into_bytes())
+        Key::from(m.to_bytes())
     }
 }
 
@@ -112,6 +111,8 @@ pub struct ProviderRecord {
     pub provider: PeerId,
     /// The expiration time as measured by a local, monotonic clock.
     pub expires: Option<Instant>,
+    /// The known addresses that the provider may be listening on.
+    pub addresses: Vec<Multiaddr>
 }
 
 impl Hash for ProviderRecord {
@@ -123,12 +124,15 @@ impl Hash for ProviderRecord {
 
 impl ProviderRecord {
     /// Creates a new provider record for insertion into a `RecordStore`.
-    pub fn new<K>(key: K, provider: PeerId) -> Self
+    pub fn new<K>(key: K, provider: PeerId, addresses: Vec<Multiaddr>) -> Self
     where
         K: Into<Key>
     {
         ProviderRecord {
-            key: key.into(), provider, expires: None
+            key: key.into(),
+            provider,
+            expires: None,
+            addresses,
         }
     }
 
@@ -142,14 +146,14 @@ impl ProviderRecord {
 mod tests {
     use super::*;
     use quickcheck::*;
-    use multihash::{wrap, Code};
+    use libp2p_core::multihash::Code;
     use rand::Rng;
     use std::time::Duration;
 
     impl Arbitrary for Key {
         fn arbitrary<G: Gen>(_: &mut G) -> Key {
             let hash = rand::thread_rng().gen::<[u8; 32]>();
-            Key::from(wrap(Code::Sha2_256, &hash))
+            Key::from(Multihash::wrap(Code::Sha2_256.into(), &hash).unwrap())
         }
     }
 
@@ -178,6 +182,7 @@ mod tests {
                 } else {
                     None
                 },
+                addresses: vec![],
             }
         }
     }

@@ -24,7 +24,7 @@ use crate::{Negotiated, NegotiationError};
 use crate::protocol::{Protocol, ProtocolError, MessageIO, Message, Version};
 
 use futures::{future::Either, prelude::*};
-use std::{convert::TryFrom as _, io, iter, mem, pin::Pin, task::{Context, Poll}};
+use std::{convert::TryFrom as _, iter, mem, pin::Pin, task::{Context, Poll}};
 
 /// Returns a `Future` that negotiates a protocol on the given I/O stream
 /// for a peer acting as the _dialer_ (or _initiator_).
@@ -34,12 +34,11 @@ use std::{convert::TryFrom as _, io, iter, mem, pin::Pin, task::{Context, Poll}}
 /// returned `Future` resolves with the name of the negotiated protocol and
 /// a [`Negotiated`] I/O stream.
 ///
-/// The chosen message flow for protocol negotiation depends on the numbers
-/// of supported protocols given. That is, this function delegates to
-/// [`dialer_select_proto_serial`] or [`dialer_select_proto_parallel`]
-/// based on the number of protocols given. The number of protocols is
-/// determined through the `size_hint` of the given iterator and thus
-/// an inaccurate size estimate may result in a suboptimal choice.
+/// The chosen message flow for protocol negotiation depends on the numbers of
+/// supported protocols given. That is, this function delegates to serial or
+/// parallel variant based on the number of protocols given. The number of
+/// protocols is determined through the `size_hint` of the given iterator and
+/// thus an inaccurate size estimate may result in a suboptimal choice.
 ///
 /// Within the scope of this library, a dialer always commits to a specific
 /// multistream-select protocol [`Version`], whereas a listener always supports
@@ -57,12 +56,17 @@ where
     I::Item: AsRef<[u8]>
 {
     let iter = protocols.into_iter();
+    // NOTE: Temporarily disabled "parallel" negotiation in order to correct the
+    // "ls" responses towards interoperability and (new) spec compliance.
+    // See https://github.com/libp2p/rust-libp2p/issues/1795.
+    Either::Left(dialer_select_proto_serial(inner, iter, version))
+
     // We choose between the "serial" and "parallel" strategies based on the number of protocols.
-    if iter.size_hint().1.map(|n| n <= 3).unwrap_or(false) {
-        Either::Left(dialer_select_proto_serial(inner, iter, version))
-    } else {
-        Either::Right(dialer_select_proto_parallel(inner, iter, version))
-    }
+    // if iter.size_hint().1.map(|n| n <= 3).unwrap_or(false) {
+    //    Either::Left(dialer_select_proto_serial(inner, iter, version))
+    // } else {
+    //     Either::Right(dialer_select_proto_parallel(inner, iter, version))
+    // }
 }
 
 /// Future, returned by `dialer_select_proto`, which selects a protocol and dialer
@@ -77,7 +81,7 @@ pub type DialerSelectFuture<R, I> = Either<DialerSelectSeq<R, I>, DialerSelectPa
 /// trying the given list of supported protocols one-by-one.
 ///
 /// This strategy is preferable if the dialer only supports a few protocols.
-pub fn dialer_select_proto_serial<R, I>(
+pub(crate) fn dialer_select_proto_serial<R, I>(
     inner: R,
     protocols: I,
     version: Version
@@ -106,7 +110,7 @@ where
 ///
 /// This strategy may be beneficial if the dialer supports many protocols
 /// and it is unclear whether the remote supports one of the first few.
-pub fn dialer_select_proto_parallel<R, I>(
+pub(crate) fn dialer_select_proto_parallel<R, I>(
     inner: R,
     protocols: I,
     version: Version
@@ -231,9 +235,10 @@ where
                             *this.state = SeqState::AwaitProtocol { io, protocol };
                             return Poll::Pending
                         }
-                        Poll::Ready(None) =>
-                            return Poll::Ready(Err(NegotiationError::from(
-                                io::Error::from(io::ErrorKind::UnexpectedEof)))),
+                        // Treat EOF error as [`NegotiationError::Failed`], not as
+                        // [`NegotiationError::ProtocolError`], allowing dropping or closing an I/O
+                        // stream as a permissible way to "gracefully" fail a negotiation.
+                        Poll::Ready(None) => return Poll::Ready(Err(NegotiationError::Failed)),
                     };
 
                     match msg {
@@ -242,8 +247,7 @@ where
                         }
                         Message::Protocol(ref p) if p.as_ref() == protocol.as_ref() => {
                             log::debug!("Dialer: Received confirmation for protocol: {}", p);
-                            let (io, remaining) = io.into_inner();
-                            let io = Negotiated::completed(io, remaining);
+                            let io = Negotiated::completed(io.into_inner());
                             return Poll::Ready(Ok((protocol, io)));
                         }
                         Message::NotAvailable => {
@@ -355,9 +359,10 @@ where
                             *this.state = ParState::RecvProtocols { io };
                             return Poll::Pending
                         }
-                        Poll::Ready(None) =>
-                            return Poll::Ready(Err(NegotiationError::from(
-                                io::Error::from(io::ErrorKind::UnexpectedEof)))),
+                        // Treat EOF error as [`NegotiationError::Failed`], not as
+                        // [`NegotiationError::ProtocolError`], allowing dropping or closing an I/O
+                        // stream as a permissible way to "gracefully" fail a negotiation.
+                        Poll::Ready(None) => return Poll::Ready(Err(NegotiationError::Failed)),
                     };
 
                     match &msg {
@@ -401,4 +406,3 @@ where
         }
     }
 }
-

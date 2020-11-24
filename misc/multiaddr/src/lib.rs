@@ -5,7 +5,14 @@ pub use multihash;
 mod protocol;
 mod onion_addr;
 mod errors;
+
+#[cfg(feature = "url")]
 mod from_url;
+
+#[cfg(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")))]
+use if_addrs::{IfAddr, get_if_addrs};
+#[cfg(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")))]
+use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 
 use serde::{
     Deserialize,
@@ -18,16 +25,18 @@ use std::{
     convert::TryFrom,
     fmt,
     io,
-    iter::FromIterator,
+    iter::{self, FromIterator},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     result::Result as StdResult,
     str::FromStr,
     sync::Arc
 };
 pub use self::errors::{Result, Error};
-pub use self::from_url::{FromUrlErr, from_url, from_url_lossy};
 pub use self::protocol::Protocol;
 pub use self::onion_addr::Onion3Addr;
+
+#[cfg(feature = "url")]
+pub use self::from_url::{FromUrlErr, from_url, from_url_lossy};
 
 static_assertions::const_assert! {
     // This check is most certainly overkill right now, but done here
@@ -303,18 +312,24 @@ impl TryFrom<Vec<u8>> for Multiaddr {
     }
 }
 
+// Create a [`Multiaddr`] from the given IP address and port number.
+#[cfg(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")))]
+fn ip_to_multiaddr(ip: IpAddr, port: u16) -> Multiaddr {
+    let proto = match ip {
+        IpAddr::V4(ip) => Protocol::Ip4(ip),
+        IpAddr::V6(ip) => Protocol::Ip6(ip)
+    };
+    let it = iter::once(proto).chain(iter::once(Protocol::Tcp(port)));
+    Multiaddr::from_iter(it)
+}
+
 /// Collect all local host addresses and use the provided port number as listen port.
-#[cfg(not(any(target_os = "emscripten", target_os = "unknown")))]
-pub fn host_addresses(suffix: &[Protocol]) -> io::Result<Vec<(IpAddr, ipnet::IpNet, Multiaddr)>> {
-    use get_if_addrs::{get_if_addrs, IfAddr};
-    use ipnet::{IpNet, Ipv4Net, Ipv6Net};
+#[cfg(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")))]
+pub fn host_addresses(port: u16) -> io::Result<Vec<(IpAddr, IpNet, Multiaddr)>> {
     let mut addrs = Vec::new();
     for iface in get_if_addrs()? {
         let ip = iface.ip();
-        let mut ma = Multiaddr::from(ip);
-        for proto in suffix {
-            ma = ma.with(proto.clone())
-        }
+        let ma = ip_to_multiaddr(ip, port);
         let ipn = match iface.addr {
             IfAddr::V4(ip4) => {
                 let prefix_len = (!u32::from_be_bytes(ip4.netmask.octets())).leading_zeros();
@@ -377,7 +392,7 @@ impl<'de> Deserialize<'de> for Multiaddr {
                 formatter.write_str("multiaddress")
             }
             fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> StdResult<Self::Value, A::Error> {
-                let mut buf: Vec<u8> = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+                let mut buf: Vec<u8> = Vec::with_capacity(std::cmp::min(seq.size_hint().unwrap_or(0), 4096));
                 while let Some(e) = seq.next_element()? { buf.push(e); }
                 if self.is_human_readable {
                     let s = String::from_utf8(buf).map_err(DeserializerError::custom)?;

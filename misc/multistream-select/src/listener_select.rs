@@ -26,7 +26,7 @@ use crate::protocol::{Protocol, ProtocolError, MessageIO, Message, Version};
 
 use futures::prelude::*;
 use smallvec::SmallVec;
-use std::{convert::TryFrom as _, io, iter::FromIterator, mem, pin::Pin, task::{Context, Poll}};
+use std::{convert::TryFrom as _, iter::FromIterator, mem, pin::Pin, task::{Context, Poll}};
 
 /// Returns a `Future` that negotiates a protocol on the given I/O stream
 /// for a peer acting as the _listener_ (or _responder_).
@@ -88,7 +88,10 @@ where
         message: Message,
         protocol: Option<N>
     },
-    Flush { io: MessageIO<R> },
+    Flush {
+        io: MessageIO<R>,
+        protocol: Option<N>
+    },
     Done
 }
 
@@ -115,10 +118,10 @@ where
                             return Poll::Ready(Err(ProtocolError::InvalidMessage.into()))
                         },
                         Poll::Ready(Some(Err(err))) => return Poll::Ready(Err(From::from(err))),
-                        Poll::Ready(None) =>
-                            return Poll::Ready(Err(NegotiationError::from(
-                                ProtocolError::IoError(
-                                    io::ErrorKind::UnexpectedEof.into())))),
+                        // Treat EOF error as [`NegotiationError::Failed`], not as
+                        // [`NegotiationError::ProtocolError`], allowing dropping or closing an I/O
+                        // stream as a permissible way to "gracefully" fail a negotiation.
+                        Poll::Ready(None) => return Poll::Ready(Err(NegotiationError::Failed)),
                         Poll::Pending => {
                             *this.state = State::RecvHeader { io };
                             return Poll::Pending
@@ -141,7 +144,7 @@ where
                     }
 
                     *this.state = match version {
-                        Version::V1 => State::Flush { io },
+                        Version::V1 => State::Flush { io, protocol: None },
                         Version::V1Lazy => State::RecvMessage { io },
                     }
                 }
@@ -149,10 +152,16 @@ where
                 State::RecvMessage { mut io } => {
                     let msg = match Pin::new(&mut io).poll_next(cx) {
                         Poll::Ready(Some(Ok(msg))) => msg,
-                        Poll::Ready(None) =>
-                            return Poll::Ready(Err(NegotiationError::from(
-                                ProtocolError::IoError(
-                                    io::ErrorKind::UnexpectedEof.into())))),
+                        // Treat EOF error as [`NegotiationError::Failed`], not as
+                        // [`NegotiationError::ProtocolError`], allowing dropping or closing an I/O
+                        // stream as a permissible way to "gracefully" fail a negotiation.
+                        //
+                        // This is e.g. important when a listener rejects a protocol with
+                        // [`Message::NotAvailable`] and the dialer does not have alternative
+                        // protocols to propose. Then the dialer will stop the negotiation and drop
+                        // the corresponding stream. As a listener this EOF should be interpreted as
+                        // a failed negotiation.
+                        Poll::Ready(None) => return Poll::Ready(Err(NegotiationError::Failed)),
                         Poll::Pending => {
                             *this.state = State::RecvMessage { io };
                             return Poll::Pending;
@@ -204,28 +213,28 @@ where
                         return Poll::Ready(Err(From::from(err)));
                     }
 
-                    // If a protocol has been selected, finish negotiation.
-                    // Otherwise flush the sink and expect to receive another
-                    // message.
-                    *this.state = match protocol {
-                        Some(protocol) => {
-                            log::debug!("Listener: sent confirmed protocol: {}",
-                                String::from_utf8_lossy(protocol.as_ref()));
-                            let (io, remaining) = io.into_inner();
-                            let io = Negotiated::completed(io, remaining);
-                            return Poll::Ready(Ok((protocol, io)));
-                        }
-                        None => State::Flush { io }
-                    };
+                    *this.state = State::Flush { io, protocol };
                 }
 
-                State::Flush { mut io } => {
+                State::Flush { mut io, protocol } => {
                     match Pin::new(&mut io).poll_flush(cx) {
                         Poll::Pending => {
-                            *this.state = State::Flush { io };
+                            *this.state = State::Flush { io, protocol };
                             return Poll::Pending
                         },
-                        Poll::Ready(Ok(())) => *this.state = State::RecvMessage { io },
+                        Poll::Ready(Ok(())) => {
+                            // If a protocol has been selected, finish negotiation.
+                            // Otherwise expect to receive another message.
+                            match protocol {
+                                Some(protocol) => {
+                                    log::debug!("Listener: sent confirmed protocol: {}",
+                                        String::from_utf8_lossy(protocol.as_ref()));
+                                    let io = Negotiated::completed(io.into_inner());
+                                    return Poll::Ready(Ok((protocol, io)))
+                                }
+                                None => *this.state = State::RecvMessage { io }
+                            }
+                        }
                         Poll::Ready(Err(err)) => return Poll::Ready(Err(From::from(err))),
                     }
                 }
