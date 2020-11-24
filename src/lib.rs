@@ -218,6 +218,8 @@ pub use libp2p_plaintext as plaintext;
 pub use libp2p_quic as quic;
 #[doc(inline)]
 pub use libp2p_swarm as swarm;
+#[cfg(any(feature = "tcp-async-std", feature = "tcp-tokio"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "tcp-async-std", feature = "tcp-tokio"))))]
 #[cfg(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")))]
 #[doc(inline)]
 pub use libp2p_tcp as tcp;
