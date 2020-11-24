@@ -132,8 +132,8 @@ name = "chat-tokio"
 required-features = ["tcp-tokio", "mdns-tokio"]
 
 [patch.crates-io]
-# TODO: waiting for a release
-rustls = { git = "https://github.com/ctz/rustls", rev = "cac66a8c184f3ef8510bb62b390f241c2760f51d" }
-# TODO: overwrite necessary because quinn-proto 0.6.1 is incompatible with the rustls overwrite above
-# TODO: UUUUUUUGHHHHHH
-quinn-proto = { git = "https://github.com/djc/quinn", rev = "6e9f7e8063926f8bdab56bbc1615277ff0bdece5" }
+# TODO: quinn/rustls ecosystem still updating ; see https://github.com/quinn-rs/quinn/issues/856
+# TODO: pinned by quinn-proto
+rustls = { git = "https://github.com/ctz/rustls", rev = "fee894f7e030" }
+# TODO: overwrite necessary because quinn-proto 0.6.1 is incompatible with rustls 0.18.0
+quinn-proto = { git = "https://github.com/djc/quinn", rev = "f14c915e1fba291c8ad98b868e0d75d5e084f933" }

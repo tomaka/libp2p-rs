@@ -335,6 +335,12 @@ impl Connection {
                     }) => {
                         return Poll::Ready(ConnectionEvent::StreamOpened);
                     }
+                    quinn_proto::Event::Stream(quinn_proto::StreamEvent::Stopped {
+                        id,
+                        error_code,
+                    }) => {
+                        todo!() // TODO: ?!
+                    }
                     quinn_proto::Event::ConnectionLost { reason } => {
                         debug_assert!(self.closed.is_none());
                         self.is_handshaking = false;
@@ -344,12 +350,16 @@ impl Connection {
                     }
                     quinn_proto::Event::Stream(quinn_proto::StreamEvent::Finished {
                         id,
-                        stop_reason,
                     }) => {
-                        // TODO: transmit `stop_reason`
                         return Poll::Ready(ConnectionEvent::StreamFinished(id));
                     }
                     quinn_proto::Event::Connected => {
+                        debug_assert!(self.is_handshaking);
+                        debug_assert!(!self.connection.is_handshaking());
+                        self.is_handshaking = false;
+                        return Poll::Ready(ConnectionEvent::Connected);
+                    }
+                    quinn_proto::Event::HandshakeDataReady => {
                         debug_assert!(self.is_handshaking);
                         debug_assert!(!self.connection.is_handshaking());
                         self.is_handshaking = false;

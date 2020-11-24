@@ -246,7 +246,7 @@ impl Endpoint {
     pub(crate) async fn send_udp_packet(
         &self,
         destination: SocketAddr,
-        data: impl Into<Box<[u8]>>,
+        data: impl Into<Vec<u8>>,
     ) {
         let _ = self
             .to_endpoint
@@ -323,7 +323,7 @@ enum ToEndpoint {
         /// Destination of the UDP packet.
         destination: SocketAddr,
         /// Packet of data to send.
-        data: Box<[u8]>,
+        data: Vec<u8>,
     },
 }
 
@@ -440,7 +440,7 @@ async fn background_task(
     // Next packet waiting to be transmitted on the UDP socket, if any.
     // Note that this variable isn't strictly necessary, but it reduces code duplication in the
     // code below.
-    let mut next_packet_out: Option<(SocketAddr, Box<[u8]>)> = None;
+    let mut next_packet_out: Option<(SocketAddr, Vec<u8>)> = None;
 
     // Main loop of the task.
     loop {

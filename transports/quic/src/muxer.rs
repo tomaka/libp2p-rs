@@ -231,7 +231,8 @@ impl StreamMuxer for QuicMuxer {
 
         match inner.connection.read_substream(*substream, buf) {
             Ok(bytes) => Poll::Ready(Ok(bytes)),
-            Err(quinn_proto::ReadError::Reset(_)) => Poll::Ready(Ok(0)), // EOF
+            Err(quinn_proto::ReadError::Reset(_)) => Poll::Ready(Ok(0)), // EOF  // TODO: no
+            Err(quinn_proto::ReadError::IllegalOrderedRead) => todo!(),  // TODO: ?!
             Err(quinn_proto::ReadError::Blocked) => {
                 if let Some(substream) = inner.substreams.get_mut(substream) {
                     if !substream
