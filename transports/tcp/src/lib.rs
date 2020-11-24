@@ -138,7 +138,7 @@ impl Transport for $tcp_config {
             // as reported by `get_if_addrs`.
             let addrs =
                 if socket_addr.ip().is_unspecified() {
-                    let addrs = host_addresses(&[Protocol::Tcp(port)])?;
+                    let addrs = host_addresses(port)?;
                     debug!("Listening on {:?}", addrs.iter().map(|(_, _, ma)| ma).collect::<Vec<_>>());
                     Addresses::Many(addrs)
                 } else {
@@ -432,7 +432,7 @@ fn check_for_interface_changes<T>(
     // and expired addresses.
     //
     // TODO: We do not detect expired addresses unless there is a new address.
-    let old_listen_addrs = std::mem::replace(listen_addrs, host_addresses(&[Protocol::Tcp(listen_port)])?);
+    let old_listen_addrs = std::mem::replace(listen_addrs, host_addresses(listen_port)?);
 
     // Check for addresses no longer in use.
     for (ip, _, ma) in old_listen_addrs.iter() {

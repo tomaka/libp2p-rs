@@ -22,7 +22,7 @@ use crate::connection::{Connection, ConnectionEvent};
 use crate::error::Error;
 
 use futures::prelude::*;
-use libp2p_core::{StreamMuxer, StreamMuxerEvent};
+use libp2p_core::muxing::{StreamMuxer, StreamMuxerEvent};
 use parking_lot::{Mutex, MutexGuard};
 use std::{
     collections::HashMap,
@@ -143,7 +143,7 @@ impl StreamMuxer for QuicMuxer {
 
         if let Some(substream) = inner.connection.pop_incoming_substream() {
             inner.substreams.insert(substream, Default::default());
-            Poll::Ready(Ok(substream))
+            Poll::Ready(Ok(StreamMuxerEvent::InboundSubstream(substream)))
         } else {
             Poll::Pending
         }
