@@ -29,7 +29,6 @@
 use crate::endpoint::Endpoint;
 
 use futures::{channel::mpsc, prelude::*};
-use libp2p_core::StreamMuxer;
 use std::{
     fmt,
     net::SocketAddr,
@@ -105,12 +104,7 @@ impl Connection {
         connection_id: quinn_proto::ConnectionHandle,
         from_endpoint: mpsc::Receiver<quinn_proto::ConnectionEvent>,
     ) -> Self {
-        // As the documentation mention, one is not supposed to call any of the methods on the
-        // `quinn_proto::Connection` before entering this function, and consequently, even if the
-        // connection has already been closed, there is no way for it to know that it has been
-        // closed.
         assert!(!connection.is_closed());
-
         let is_handshaking = connection.is_handshaking();
 
         Connection {
@@ -186,15 +180,29 @@ impl Connection {
         self.connection.open(quinn_proto::Dir::Bi)
     }
 
-    // TODO: better API
+    /// Reads data from the given substream. Similar to the API of `std::io::Read`.
+    ///
+    /// If `Err(ReadError::Blocked)` is returned, then a [`ConnectionEvent::StreamReadable`] event
+    /// will later be produced when the substream has readable data. A
+    /// [`ConnectionEvent::StreamStopped`] event can also be emitted.
     pub(crate) fn read_substream(
         &mut self,
         id: quinn_proto::StreamId,
         buf: &mut [u8],
     ) -> Result<usize, quinn_proto::ReadError> {
-        self.connection.read(id, buf).map(|n| n.unwrap_or(0))
+        self.connection.read(id, buf).map(|n| {
+            // `n` is `None` in case of EOF.
+            // See https://github.com/quinn-rs/quinn/blob/9aa3bde3aa1319b2c743f792312508de9270b8c6/quinn/src/streams.rs#L367-L370
+            debug_assert_ne!(n, Some(0));  // Sanity check
+            n.unwrap_or(0)
+        })
     }
 
+    /// Writes data to the given substream. Similar to the API of `std::io::Write`.
+    ///
+    /// If `Err(WriteError::Blocked)` is returned, then a [`ConnectionEvent::StreamWritable`] event
+    /// will later be produced when the substream can be written to. A
+    /// [`ConnectionEvent::StreamStopped`] event can also be emitted.
     pub(crate) fn write_substream(
         &mut self,
         id: quinn_proto::StreamId,
@@ -203,6 +211,14 @@ impl Connection {
         self.connection.write(id, buf)
     }
 
+    /// Closes the given substream.
+    ///
+    /// [`Connection::write_substream`] must no longer be called. The substream is however still
+    /// readable.
+    ///
+    /// On success, a [`ConnectionEvent::StreamFinished`] event will later be produced when the
+    /// substream has been effectively closed. A [`ConnectionEvent::StreamStopped`] event can also
+    /// be emitted.
     pub(crate) fn shutdown_substream(
         &mut self,
         id: quinn_proto::StreamId,
@@ -235,7 +251,7 @@ impl Connection {
         'send_pending: loop {
             // Sending the pending event to the endpoint. If the endpoint is too busy, we just
             // stop the processing here.
-            // There is a bit of a question in play here: should be continue to accept events
+            // There is a bit of a question in play here: should we continue to accept events
             // through `from_endpoint` if `to_endpoint` is busy?
             // We need to be careful to avoid a potential deadlock if both `from_endpoint` and
             // `to_endpoint` are full. As such, we continue to transfer data from `from_endpoint`
@@ -325,6 +341,13 @@ impl Connection {
                     quinn_proto::Event::Stream(quinn_proto::StreamEvent::Writable { id }) => {
                         return Poll::Ready(ConnectionEvent::StreamWritable(id));
                     }
+                    quinn_proto::Event::Stream(quinn_proto::StreamEvent::Stopped {
+                        id, ..
+                    }) => {
+                        // The `Stop` QUIC event is more or less similar to a `Reset`, except that
+                        // it applies only on the writing side of the pipe.
+                        return Poll::Ready(ConnectionEvent::StreamStopped(id));
+                    }
                     quinn_proto::Event::Stream(quinn_proto::StreamEvent::Available {
                         dir: quinn_proto::Dir::Bi,
                     }) => {
@@ -334,12 +357,6 @@ impl Connection {
                         dir: quinn_proto::Dir::Bi,
                     }) => {
                         return Poll::Ready(ConnectionEvent::StreamOpened);
-                    }
-                    quinn_proto::Event::Stream(quinn_proto::StreamEvent::Stopped {
-                        id,
-                        error_code,
-                    }) => {
-                        todo!() // TODO: ?!
                     }
                     quinn_proto::Event::ConnectionLost { reason } => {
                         debug_assert!(self.closed.is_none());
@@ -361,9 +378,7 @@ impl Connection {
                     }
                     quinn_proto::Event::HandshakeDataReady => {
                         debug_assert!(self.is_handshaking);
-                        debug_assert!(!self.connection.is_handshaking());
-                        self.is_handshaking = false;
-                        return Poll::Ready(ConnectionEvent::Connected);
+                        debug_assert!(self.connection.is_handshaking());
                     }
                 }
             }
@@ -392,8 +407,7 @@ impl Drop for Connection {
 /// Event generated by the [`Connection`].
 #[derive(Debug)]
 pub(crate) enum ConnectionEvent {
-    /// Now connected to the remote. Can only happen if [`Connection::is_handshaking`] was
-    /// returning `true`.
+    /// Now connected to the remote and certificates are available.
     Connected,
 
     /// Connection has been closed and can no longer be used.
@@ -406,7 +420,16 @@ pub(crate) enum ConnectionEvent {
     /// `None`. After this event has been generated, this method is guaranteed to return `Some`.
     StreamOpened,
 
+    /// Generated after [`Connection::read_substream`] has been called and has returned a
+    /// `Blocked` error.
     StreamReadable(quinn_proto::StreamId),
+    /// Generated after [`Connection::write_substream`] has been called and has returned a
+    /// `Blocked` error.
     StreamWritable(quinn_proto::StreamId),
+
+    /// Generated after [`Connection::shutdown_substream`] has been called.
     StreamFinished(quinn_proto::StreamId),
+    /// A substream has been stopped. This concept is similar to the concept of a substream being
+    /// "reset", as in a TCP socket being reset for example.
+    StreamStopped(quinn_proto::StreamId),
 }

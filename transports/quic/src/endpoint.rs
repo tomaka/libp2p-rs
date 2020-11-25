@@ -28,7 +28,7 @@
 //! the rest of the code only happens through channels. See the documentation of the
 //! [`background_task`] for a thorough description.
 
-use crate::{connection::Connection, error::Error, x509};
+use crate::{connection::Connection, x509};
 
 use async_std::net::SocketAddr;
 use futures::{
@@ -36,15 +36,12 @@ use futures::{
     lock::Mutex,
     prelude::*,
 };
-use libp2p_core::{
-    multiaddr::{Multiaddr, Protocol},
-    Transport,
-};
+use libp2p_core::multiaddr::Multiaddr;
 use std::{
     collections::{HashMap, VecDeque},
     fmt, io,
     sync::{Arc, Weak},
-    task::{Context, Poll},
+    task::Poll,
     time::{Duration, Instant},
 };
 
@@ -68,7 +65,7 @@ impl Config {
         multiaddr: Multiaddr,
     ) -> Result<Self, x509::ConfigError> {
         let mut transport = quinn_proto::TransportConfig::default();
-        transport.stream_window_uni(0);
+        transport.stream_window_uni(0).unwrap();  // Can only panic if value is out of range.
         transport.datagram_receive_buffer_size(None);
         transport.keep_alive_interval(Some(Duration::from_millis(10)));
         let transport = Arc::new(transport);
@@ -104,8 +101,8 @@ pub struct Endpoint {
     /// [`Endpoint::next_incoming`] are serialized.
     new_connections: Mutex<mpsc::Receiver<Connection>>,
 
-    /// Copy of [`to_endpoint`], except not behind a `Mutex`. Used if we want to be guaranteed a
-    /// slot in the messages buffer.
+    /// Copy of [`Endpoint::to_endpoint`], except not behind a `Mutex`. Used if we want to be
+    /// guaranteed a slot in the messages buffer.
     to_endpoint2: mpsc::Sender<ToEndpoint>,
 
     /// Configuration passed at initialization.
