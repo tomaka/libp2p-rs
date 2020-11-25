@@ -87,6 +87,7 @@ impl StreamMuxer for QuicMuxer {
     type Substream = quinn_proto::StreamId;
     type Error = Error;
 
+    // TODO: what if called multiple times? register all wakers?
     fn poll_event(&self, cx: &mut Context<'_>) -> Poll<Result<StreamMuxerEvent<Self::Substream>, Self::Error>> {
         // We use `poll_inbound` to perform the background processing of the entire connection.
         let mut inner = self.inner.lock();
@@ -156,6 +157,7 @@ impl StreamMuxer for QuicMuxer {
         ()
     }
 
+    // TODO: what if called multiple times? register all wakers?
     fn poll_outbound(
         &self,
         cx: &mut Context<'_>,
@@ -304,11 +306,13 @@ impl StreamMuxer for QuicMuxer {
         self.flush_all(cx)
     }
 
+    // TODO: what if called multiple times? register all wakers?
     fn flush_all(&self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         // TODO: call poll_transmit() and stuff
         Poll::Ready(Ok(()))
     }
 
+    // TODO: what if called multiple times? register all wakers?
     fn close(&self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         // StreamMuxer's `close` documentation mentions that it automatically implies `flush_all`.
         if let Poll::Pending = self.flush_all(cx)? {
