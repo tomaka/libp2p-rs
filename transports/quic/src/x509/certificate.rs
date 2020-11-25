@@ -20,23 +20,14 @@
 
 //! Certificate handling for libp2p
 //!
-//! This handles generation, signing, and verification.
-//!
-//! This crate uses the `log` crate to emit log output.  Events that will occur
-//! normally are output at `trace` level, while “expected” error conditions
-//! (ones that can result during correct use of the library) are logged at
-//! `debug` level.
+//! This module handles generation, signing, and verification of certificates.
 
 use super::LIBP2P_SIGNING_PREFIX_LENGTH;
 use libp2p_core::identity;
 
-const LIBP2P_OID: &[u64] = &[1, 3, 6, 1, 4, 1, 53594, 1, 1];
+const LIBP2P_OID: &[u64] = &[1, 3, 6, 1, 4, 1, 53594, 1, 1];  // Based on libp2p TLS 1.3 specs
 const LIBP2P_SIGNATURE_ALGORITHM_PUBLIC_KEY_LENGTH: usize = 65;
 static LIBP2P_SIGNATURE_ALGORITHM: &rcgen::SignatureAlgorithm = &rcgen::PKCS_ECDSA_P256_SHA256;
-// preferred, but not supported by rustls yet
-//const LIBP2P_SIGNATURE_ALGORITHM_PUBLIC_KEY_LENGTH: usize = 32;
-//static LIBP2P_SIGNATURE_ALGORITHM: &rcgen::SignatureAlgorithm =
-// &rcgen::PKCS_ED25519
 
 /// Generates a self-signed TLS certificate that includes a libp2p-specific
 /// certificate extension containing the public key of the given keypair.
@@ -53,8 +44,6 @@ pub(crate) fn make_cert(
         assert_eq!(
             certif_pubkey.len(),
             LIBP2P_SIGNATURE_ALGORITHM_PUBLIC_KEY_LENGTH,
-            "ed25519 public keys are {} bytes",
-            LIBP2P_SIGNATURE_ALGORITHM_PUBLIC_KEY_LENGTH
         );
 
         let mut buf =

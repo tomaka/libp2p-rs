@@ -30,7 +30,7 @@ pub use verifier::extract_peerid_or_panic;
 
 const LIBP2P_SIGNING_PREFIX: [u8; 21] = *b"libp2p-tls-handshake:";
 const LIBP2P_SIGNING_PREFIX_LENGTH: usize = LIBP2P_SIGNING_PREFIX.len();
-const LIBP2P_OID_BYTES: &[u8] = &[43, 6, 1, 4, 1, 131, 162, 90, 1, 1];
+const LIBP2P_OID_BYTES: &[u8] = &[43, 6, 1, 4, 1, 131, 162, 90, 1, 1]; // Based on libp2p TLS 1.3 specs
 
 /// Error creating a configuration
 // TODO: remove this; what is the user supposed to do with this error?

@@ -27,14 +27,16 @@ use rustls::{
 use untrusted::{Input, Reader};
 use webpki::Error;
 
-/// Libp2p client and server certificate verifier.
+/// Implementation of the `rustls` certificate verification traits for libp2p.
+///
+/// Only TLS 1.3 is supported. TLS 1.2 should be disabled in the configuration of `rustls`.
 pub(crate) struct Libp2pCertificateVerifier;
 
 /// libp2p requires the following of X.509 server certificate chains:
 ///
-/// * Exactly one certificate must be presented.
-/// * The certificate must be self-signed.
-/// * The certificate must have a valid libp2p extension that includes a
+/// - Exactly one certificate must be presented.
+/// - The certificate must be self-signed.
+/// - The certificate must have a valid libp2p extension that includes a
 ///   signature of its public key.
 ///
 /// The check that the [`PeerId`] matches the expected `PeerId` must be done by
@@ -56,7 +58,7 @@ impl rustls::ServerCertVerifier for Libp2pCertificateVerifier {
         _cert: &Certificate,
         _dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, TLSError> {
-        panic!("got asked to verify a TLS1.2 signature, but TLS1.2 was disabled")
+        Err(TLSError::PeerIncompatibleError("Only TLS 1.3 certificates are supported".to_string()))
     }
 
     fn verify_tls13_signature(
@@ -71,10 +73,10 @@ impl rustls::ServerCertVerifier for Libp2pCertificateVerifier {
 
 /// libp2p requires the following of X.509 client certificate chains:
 ///
-/// * Exactly one certificate must be presented. In particular, client
+/// - Exactly one certificate must be presented. In particular, client
 ///   authentication is mandatory in libp2p.
-/// * The certificate must be self-signed.
-/// * The certificate must have a valid libp2p extension that includes a
+/// - The certificate must be self-signed.
+/// - The certificate must have a valid libp2p extension that includes a
 ///   signature of its public key.
 ///
 /// The check that the [`PeerId`] matches the expected `PeerId` must be done by
@@ -107,7 +109,7 @@ impl rustls::ClientCertVerifier for Libp2pCertificateVerifier {
         _cert: &Certificate,
         _dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, TLSError> {
-        panic!("got asked to verify a TLS1.2 signature, but TLS1.2 was disabled")
+        Err(TLSError::PeerIncompatibleError("Only TLS 1.3 certificates are supported".to_string()))
     }
 
     fn verify_tls13_signature(
@@ -217,8 +219,8 @@ fn parse_libp2p_extension<'a>(extension: Input<'a>) -> Result<Libp2pExtension<'a
 
 /// Extracts the `PeerId` from a certificate’s libp2p extension. It is erroneous
 /// to call this unless the certificate is known to be a well-formed X.509
-/// certificate with a valid libp2p extension. The certificate verifiers in this
-/// crate validate check this.
+/// certificate with a valid libp2p extension. The certificate verifier in this
+/// module check this.
 ///
 /// # Panics
 ///
