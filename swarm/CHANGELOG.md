@@ -1,4 +1,25 @@
-# 0.25.0 [unreleased]
+# 0.27.0 [2021-01-12]
+
+- Update dependencies.
+
+# 0.26.0 [2020-12-17]
+
+- Update `libp2p-core`.
+
+- Remove `NotifyHandler::All` thus removing the requirement for events send from
+  a `NetworkBehaviour` to a `ProtocolsHandler` to be `Clone`.
+  [PR 1880](https://github.com/libp2p/rust-libp2p/pull/1880).
+
+# 0.25.1 [2020-11-26]
+
+- Add `ExpandedSwarm::is_connected`.
+  [PR 1862](https://github.com/libp2p/rust-libp2p/pull/1862).
+
+# 0.25.0 [2020-11-25]
+
+- Permit a configuration override for the substream upgrade protocol
+  to use for all (outbound) substreams.
+  [PR 1858](https://github.com/libp2p/rust-libp2p/pull/1858).
 
 - Changed parameters for connection limits from `usize` to `u32`.
   Connection limits are now configured via `SwarmBuilder::connection_limits()`.

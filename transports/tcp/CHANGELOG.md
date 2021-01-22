@@ -1,4 +1,24 @@
-# 0.25.0 [unreleased]
+# 0.27.0 [2021-01-12]
+
+- Add support for port reuse and (re)add transport-specific
+  address translation. Thereby use only `async-io` instead of
+  `async-std`, renaming the feature accordingly. `async-io`
+  is a default feature, with an additional `tokio` feature
+  as before.
+  [PR 1887](https://github.com/libp2p/rust-libp2p/pull/1887)
+
+- Update dependencies.
+
+# 0.26.0 [2020-12-17]
+
+- Update `async-io`.
+
+# 0.25.1 [2020-11-26]
+
+- Lower `async-std` version to `1.6`, for compatibility
+  with other libp2p crates.
+
+# 0.25.0 [2020-11-25]
 
 - Update `libp2p-core`.
 

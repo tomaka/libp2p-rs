@@ -24,6 +24,7 @@ use sha2::{Digest, Sha256};
 use sha2::digest::generic_array::{GenericArray, typenum::U32};
 use std::borrow::Borrow;
 use std::hash::{Hash, Hasher};
+use crate::record;
 
 construct_uint! {
     /// 256-bit unsigned integer.
@@ -103,7 +104,23 @@ impl From<Multihash> for Key<Multihash> {
 
 impl From<PeerId> for Key<PeerId> {
     fn from(p: PeerId) -> Self {
-        Key::new(p)
+       let bytes = KeyBytes(Sha256::digest(&p.to_bytes()));
+       Key {
+           preimage: p,
+           bytes
+       }
+    }
+}
+
+impl From<Vec<u8>> for Key<Vec<u8>> {
+    fn from(b: Vec<u8>) -> Self {
+        Key::new(b)
+    }
+}
+
+impl From<record::Key> for Key<record::Key> {
+    fn from(k: record::Key) -> Self {
+        Key::new(k)
     }
 }
 

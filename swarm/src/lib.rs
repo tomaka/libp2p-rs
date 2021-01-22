@@ -120,7 +120,7 @@ use libp2p_core::{
         NetworkConfig,
         peer::ConnectedPeer,
     },
-    upgrade::ProtocolName,
+    upgrade::{ProtocolName},
 };
 use registry::{Addresses, AddressIntoIter};
 use smallvec::SmallVec;
@@ -286,7 +286,10 @@ where
     /// Pending event to be delivered to connection handlers
     /// (or dropped if the peer disconnected) before the `behaviour`
     /// can be polled again.
-    pending_event: Option<(PeerId, PendingNotifyHandler, TInEvent)>
+    pending_event: Option<(PeerId, PendingNotifyHandler, TInEvent)>,
+
+    /// The configured override for substream protocol upgrades, if any.
+    substream_upgrade_protocol_override: Option<libp2p_core::upgrade::Version>,
 }
 
 impl<TBehaviour, TInEvent, TOutEvent, THandler> Deref for
@@ -321,7 +324,7 @@ where
 impl<TBehaviour, TInEvent, TOutEvent, THandler, THandleErr>
     ExpandedSwarm<TBehaviour, TInEvent, TOutEvent, THandler>
 where TBehaviour: NetworkBehaviour<ProtocolsHandler = THandler>,
-      TInEvent: Clone + Send + 'static,
+      TInEvent: Send + 'static,
       TOutEvent: Send + 'static,
       THandler: IntoProtocolsHandler + Send + 'static,
       THandler::Handler: ProtocolsHandler<InEvent = TInEvent, OutEvent = TOutEvent, Error = THandleErr>,
@@ -357,8 +360,10 @@ where TBehaviour: NetworkBehaviour<ProtocolsHandler = THandler>,
 
     /// Initiates a new dialing attempt to the given address.
     pub fn dial_addr(me: &mut Self, addr: Multiaddr) -> Result<(), ConnectionLimit> {
-        let handler = me.behaviour.new_handler();
-        me.network.dial(&addr, handler.into_node_handler_builder()).map(|_id| ())
+        let handler = me.behaviour.new_handler()
+            .into_node_handler_builder()
+            .with_substream_upgrade_protocol_override(me.substream_upgrade_protocol_override);
+        me.network.dial(&addr, handler).map(|_id| ())
     }
 
     /// Initiates a new dialing attempt to the given peer.
@@ -375,7 +380,9 @@ where TBehaviour: NetworkBehaviour<ProtocolsHandler = THandler>,
 
         let result =
             if let Some(first) = addrs.next() {
-                let handler = me.behaviour.new_handler().into_node_handler_builder();
+                let handler = me.behaviour.new_handler()
+                    .into_node_handler_builder()
+                    .with_substream_upgrade_protocol_override(me.substream_upgrade_protocol_override);
                 me.network.peer(peer_id.clone())
                     .dial(first, addrs, handler)
                     .map(|_| ())
@@ -454,6 +461,11 @@ where TBehaviour: NetworkBehaviour<ProtocolsHandler = THandler>,
     /// Unbans a peer.
     pub fn unban_peer_id(me: &mut Self, peer_id: PeerId) {
         me.banned_peers.remove(&peer_id);
+    }
+
+    /// Checks whether the [`Network`] has an established connection to a peer.
+    pub fn is_connected(me: &Self, peer_id: &PeerId) -> bool {
+        me.network.is_connected(peer_id)
     }
 
     /// Returns the next event that happens in the `Swarm`.
@@ -546,10 +558,12 @@ where TBehaviour: NetworkBehaviour<ProtocolsHandler = THandler>,
                     });
                 },
                 Poll::Ready(NetworkEvent::IncomingConnection { connection, .. }) => {
-                    let handler = this.behaviour.new_handler();
+                    let handler = this.behaviour.new_handler()
+                        .into_node_handler_builder()
+                        .with_substream_upgrade_protocol_override(this.substream_upgrade_protocol_override);
                     let local_addr = connection.local_addr.clone();
                     let send_back_addr = connection.send_back_addr.clone();
-                    if let Err(e) = this.network.accept(connection, handler.into_node_handler_builder()) {
+                    if let Err(e) = this.network.accept(connection, handler) {
                         log::warn!("Incoming connection rejected: {:?}", e);
                     }
                     return Poll::Ready(SwarmEvent::IncomingConnection {
@@ -647,13 +661,6 @@ where TBehaviour: NetworkBehaviour<ProtocolsHandler = THandler>,
                                 return Poll::Pending
                             }
                         }
-                        PendingNotifyHandler::All(ids) => {
-                            if let Some((event, ids)) = notify_all(ids, &mut peer, event, cx) {
-                                let handler = PendingNotifyHandler::All(ids);
-                                this.pending_event = Some((peer_id, handler, event));
-                                return Poll::Pending
-                            }
-                        }
                     }
                 }
             }
@@ -733,14 +740,6 @@ where TBehaviour: NetworkBehaviour<ProtocolsHandler = THandler>,
                                     return Poll::Pending
                                 }
                             }
-                            NotifyHandler::All => {
-                                let ids = peer.connections().into_ids().collect();
-                                if let Some((event, ids)) = notify_all(ids, &mut peer, event, cx) {
-                                    let handler = PendingNotifyHandler::All(ids);
-                                    this.pending_event = Some((peer_id, handler, event));
-                                    return Poll::Pending
-                                }
-                            }
                         }
                     }
                 },
@@ -757,16 +756,15 @@ where TBehaviour: NetworkBehaviour<ProtocolsHandler = THandler>,
     }
 }
 
-/// Connections to notify of a pending event.
+/// Connection to notify of a pending event.
 ///
-/// The connection IDs to notify of an event are captured at the time
-/// the behaviour emits the event, in order not to forward the event
-/// to new connections which the behaviour may not have been aware of
-/// at the time it issued the request for sending it.
+/// The connection IDs out of which to notify one of an event are captured at
+/// the time the behaviour emits the event, in order not to forward the event to
+/// a new connection which the behaviour may not have been aware of at the time
+/// it issued the request for sending it.
 enum PendingNotifyHandler {
     One(ConnectionId),
     Any(SmallVec<[ConnectionId; 10]>),
-    All(SmallVec<[ConnectionId; 10]>),
 }
 
 /// Notify a single connection of an event.
@@ -841,60 +839,11 @@ where
         })
 }
 
-/// Notify all of the given connections of a peer of an event.
-///
-/// Returns `Some` with the given event and a new list of connections if
-/// at least one of the given connections is currently not able to receive
-/// the event, in which case the current task is scheduled to be woken up and
-/// the returned connections are those which still need to receive the event.
-///
-/// Returns `None` if all connections are either closing or the event
-/// was successfully sent to all handlers whose connections are not closing,
-/// in either case the event is consumed.
-fn notify_all<'a, TTrans, TInEvent, TOutEvent, THandler>(
-    ids: SmallVec<[ConnectionId; 10]>,
-    peer: &mut ConnectedPeer<'a, TTrans, TInEvent, TOutEvent, THandler>,
-    event: TInEvent,
-    cx: &mut Context<'_>,
-) -> Option<(TInEvent, SmallVec<[ConnectionId; 10]>)>
-where
-    TTrans: Transport,
-    TInEvent: Clone,
-    THandler: IntoConnectionHandler,
-{
-    if ids.len() == 1 {
-        if let Some(mut conn) = peer.connection(ids[0]) {
-            return notify_one(&mut conn, event, cx).map(|e| (e, ids))
-        }
-    }
-
-    let mut pending = SmallVec::new();
-    for id in ids.into_iter() {
-        if let Some(mut conn) = peer.connection(id) {
-            match conn.poll_ready_notify_handler(cx) {
-                Poll::Pending => pending.push(id),
-                Poll::Ready(Ok(())) => {
-                    // Can now only fail due to the connection suddenly closing,
-                    // which we ignore.
-                    let _ = conn.notify_handler(event.clone());
-                },
-                Poll::Ready(Err(())) => {} // connection is closing
-            }
-        }
-    }
-
-    if !pending.is_empty() {
-        return Some((event, pending))
-    }
-
-    None
-}
-
 impl<TBehaviour, TInEvent, TOutEvent, THandler> Stream for
     ExpandedSwarm<TBehaviour, TInEvent, TOutEvent, THandler>
 where TBehaviour: NetworkBehaviour<ProtocolsHandler = THandler>,
       THandler: IntoProtocolsHandler + Send + 'static,
-      TInEvent: Clone + Send + 'static,
+      TInEvent: Send + 'static,
       TOutEvent: Send + 'static,
       THandler::Handler: ProtocolsHandler<InEvent = TInEvent, OutEvent = TOutEvent>,
 {
@@ -915,7 +864,7 @@ impl<TBehaviour, TInEvent, TOutEvent, THandler> FusedStream for
     ExpandedSwarm<TBehaviour, TInEvent, TOutEvent, THandler>
 where TBehaviour: NetworkBehaviour<ProtocolsHandler = THandler>,
       THandler: IntoProtocolsHandler + Send + 'static,
-      TInEvent: Clone + Send + 'static,
+      TInEvent: Send + 'static,
       TOutEvent: Send + 'static,
       THandler::Handler: ProtocolsHandler<InEvent = TInEvent, OutEvent = TOutEvent>,
 {
@@ -962,6 +911,7 @@ pub struct SwarmBuilder<TBehaviour> {
     transport: transport::Boxed<(PeerId, StreamMuxerBox)>,
     behaviour: TBehaviour,
     network_config: NetworkConfig,
+    substream_upgrade_protocol_override: Option<libp2p_core::upgrade::Version>,
 }
 
 impl<TBehaviour> SwarmBuilder<TBehaviour>
@@ -980,6 +930,7 @@ where TBehaviour: NetworkBehaviour,
             transport: transport,
             behaviour,
             network_config: Default::default(),
+            substream_upgrade_protocol_override: None,
         }
     }
 
@@ -1040,6 +991,21 @@ where TBehaviour: NetworkBehaviour,
         self
     }
 
+    /// Configures an override for the substream upgrade protocol to use.
+    ///
+    /// The subtream upgrade protocol is the multistream-select protocol
+    /// used for protocol negotiation on substreams. Since a listener
+    /// supports all existing versions, the choice of upgrade protocol
+    /// only effects the "dialer", i.e. the peer opening a substream.
+    ///
+    /// > **Note**: If configured, specific upgrade protocols for
+    /// > individual [`SubstreamProtocol`]s emitted by the `NetworkBehaviour`
+    /// > are ignored.
+    pub fn substream_upgrade_protocol_override(mut self, v: libp2p_core::upgrade::Version) -> Self {
+        self.substream_upgrade_protocol_override = Some(v);
+        self
+    }
+
     /// Builds a `Swarm` with the current configuration.
     pub fn build(mut self) -> Swarm<TBehaviour> {
         let supported_protocols = self.behaviour
@@ -1075,7 +1041,8 @@ where TBehaviour: NetworkBehaviour,
             listened_addrs: SmallVec::new(),
             external_addrs: Addresses::default(),
             banned_peers: HashSet::new(),
-            pending_event: None
+            pending_event: None,
+            substream_upgrade_protocol_override: self.substream_upgrade_protocol_override,
         }
     }
 }

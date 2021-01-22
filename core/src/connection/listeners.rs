@@ -41,7 +41,6 @@ use std::{collections::VecDeque, fmt, pin::Pin};
 /// # Example
 ///
 /// ```no_run
-/// # fn main() {
 /// use futures::prelude::*;
 /// use libp2p_core::connection::{ListenersEvent, ListenersStream};
 ///
@@ -75,7 +74,6 @@ use std::{collections::VecDeque, fmt, pin::Pin};
 ///         }
 ///     }
 /// })
-/// # }
 /// ```
 pub struct ListenersStream<TTrans>
 where
@@ -430,6 +428,8 @@ mod tests {
             fn dial(self, _: Multiaddr) -> Result<Self::Dial, transport::TransportError<Self::Error>> {
                 panic!()
             }
+
+            fn address_translation(&self, _: &Multiaddr, _: &Multiaddr) -> Option<Multiaddr> { None }
         }
 
         async_std::task::block_on(async move {
@@ -468,6 +468,8 @@ mod tests {
             fn dial(self, _: Multiaddr) -> Result<Self::Dial, transport::TransportError<Self::Error>> {
                 panic!()
             }
+
+            fn address_translation(&self, _: &Multiaddr, _: &Multiaddr) -> Option<Multiaddr> { None }
         }
 
         async_std::task::block_on(async move {

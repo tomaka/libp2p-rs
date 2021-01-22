@@ -1,4 +1,12 @@
-# 0.28.0 [unreleased]
+# 0.30.0 [2021-01-12]
+
+- Update dependencies.
+
+# 0.29.0 [2020-12-17]
+
+- Update `libp2p-core`.
+
+# 0.28.0 [2020-11-25]
 
 - Update `libp2p-core`.
 

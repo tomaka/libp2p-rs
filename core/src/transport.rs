@@ -128,6 +128,11 @@ pub trait Transport {
     where
         Self: Sized;
 
+    /// Performs a transport-specific mapping of an address `observed` by
+    /// a remote onto a local `listen` address to yield an address for
+    /// the local node that may be reachable for other peers.
+    fn address_translation(&self, listen: &Multiaddr, observed: &Multiaddr) -> Option<Multiaddr>;
+
     /// Boxes the transport, including custom transport errors.
     fn boxed(self) -> boxed::Boxed<Self::Output>
     where
@@ -258,11 +263,7 @@ impl<TUpgr, TErr> ListenerEvent<TUpgr, TErr> {
 
     /// Returns `true` if this is an `Upgrade` listener event.
     pub fn is_upgrade(&self) -> bool {
-        if let ListenerEvent::Upgrade {..} = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, ListenerEvent::Upgrade {..})
     }
 
     /// Try to turn this listener event into upgrade parts.
@@ -279,11 +280,7 @@ impl<TUpgr, TErr> ListenerEvent<TUpgr, TErr> {
 
     /// Returns `true` if this is a `NewAddress` listener event.
     pub fn is_new_address(&self) -> bool {
-        if let ListenerEvent::NewAddress(_) = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, ListenerEvent::NewAddress(_))
     }
 
     /// Try to turn this listener event into the `NewAddress` part.
@@ -300,11 +297,7 @@ impl<TUpgr, TErr> ListenerEvent<TUpgr, TErr> {
 
     /// Returns `true` if this is an `AddressExpired` listener event.
     pub fn is_address_expired(&self) -> bool {
-        if let ListenerEvent::AddressExpired(_) = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, ListenerEvent::AddressExpired(_))
     }
 
     /// Try to turn this listener event into the `AddressExpired` part.
@@ -321,11 +314,7 @@ impl<TUpgr, TErr> ListenerEvent<TUpgr, TErr> {
 
     /// Returns `true` if this is an `Error` listener event.
     pub fn is_error(&self) -> bool {
-        if let ListenerEvent::Error(_) = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, ListenerEvent::Error(_))
     }
 
     /// Try to turn this listener event into the `Error` part.

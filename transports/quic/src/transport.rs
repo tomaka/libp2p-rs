@@ -88,6 +88,10 @@ impl Transport for QuicTransport {
         })
         .boxed())
     }
+    
+    fn address_translation(&self, server: &Multiaddr, observed: &Multiaddr) -> Option<Multiaddr> {
+      panic!("not implemented")
+    }
 
     fn dial(self, addr: Multiaddr) -> Result<Self::Dial, TransportError<Self::Error>> {
         let socket_addr = if let Ok(socket_addr) = multiaddr_to_socketaddr(&addr) {
