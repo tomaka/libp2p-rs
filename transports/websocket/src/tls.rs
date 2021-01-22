@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use async_tls::{TlsConnector, TlsAcceptor};
+use futures_rustls::{rustls, webpki, TlsConnector, TlsAcceptor};
 use std::{fmt, io, sync::Arc};
 
 /// TLS configuration.
@@ -168,4 +168,3 @@ impl From<io::Error> for Error {
         Error::Io(e)
     }
 }
-

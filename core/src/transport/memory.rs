@@ -101,7 +101,7 @@ pub struct DialFuture {
 
 impl DialFuture {
     fn new(port: NonZeroU64) -> Option<Self> {
-        let sender = HUB.get(&port)?.clone();
+        let sender = HUB.get(&port)?;
 
         let (_dial_port_channel, dial_port) = HUB.register_port(0)
             .expect("there to be some random unoccupied port.");
@@ -190,6 +190,10 @@ impl Transport for MemoryTransport {
         };
 
         DialFuture::new(port).ok_or(TransportError::Other(MemoryTransportError::Unreachable))
+    }
+
+    fn address_translation(&self, _server: &Multiaddr, _observed: &Multiaddr) -> Option<Multiaddr> {
+        None
     }
 }
 

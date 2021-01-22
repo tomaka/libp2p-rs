@@ -36,7 +36,6 @@
 //!    --features="floodsub mplex noise tcp-tokio mdns-tokio"
 //! ```
 
-use futures::prelude::*;
 use libp2p::{
     Multiaddr,
     NetworkBehaviour,
@@ -46,8 +45,7 @@ use libp2p::{
     core::upgrade,
     identity,
     floodsub::{self, Floodsub, FloodsubEvent},
-    // `TokioMdns` is available through the `mdns-tokio` feature.
-    mdns::{TokioMdns, MdnsEvent},
+    mdns::{Mdns, MdnsEvent},
     mplex,
     noise,
     swarm::{NetworkBehaviourEventProcess, SwarmBuilder},
@@ -90,7 +88,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     #[derive(NetworkBehaviour)]
     struct MyBehaviour {
         floodsub: Floodsub,
-        mdns: TokioMdns,
+        mdns: Mdns,
     }
 
     impl NetworkBehaviourEventProcess<FloodsubEvent> for MyBehaviour {
@@ -122,7 +120,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Create a Swarm to manage peers and events.
     let mut swarm = {
-        let mdns = TokioMdns::new()?;
+        let mdns = Mdns::new().await?;
         let mut behaviour = MyBehaviour {
             floodsub: Floodsub::new(peer_id.clone()),
             mdns,
@@ -155,10 +153,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     loop {
         let to_publish = {
             tokio::select! {
-                line = stdin.try_next() => Some((floodsub_topic.clone(), line?.expect("Stdin closed"))),
+                line = stdin.next_line() => {
+                    let line = line?.expect("stdin closed");
+                    Some((floodsub_topic.clone(), line))
+                }
                 event = swarm.next() => {
-                    println!("New Event: {:?}", event);
-                    None
+                    // All events are handled by the `NetworkBehaviourEventProcess`es.
+                    // I.e. the `swarm.next()` future drives the `Swarm` without ever
+                    // terminating.
+                    panic!("Unexpected event: {:?}", event);
                 }
             }
         };

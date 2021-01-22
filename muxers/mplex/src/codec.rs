@@ -19,7 +19,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use bytes::{BufMut, Bytes, BytesMut};
-use futures_codec::{Decoder, Encoder};
+use asynchronous_codec::{Decoder, Encoder};
 use libp2p_core::Endpoint;
 use std::{fmt, hash::{Hash, Hasher}, io, mem};
 use unsigned_varint::{codec, encode};
@@ -61,6 +61,7 @@ impl fmt::Display for LocalStreamId {
 }
 
 impl Hash for LocalStreamId {
+    #![allow(clippy::derive_hash_xor_eq)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_u32(self.num);
     }

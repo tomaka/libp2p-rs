@@ -1,4 +1,25 @@
-# 0.25.0 [unreleased]
+# 0.27.0 [2021-01-12]
+
+- (Re)add `Transport::address_translation` to permit transport-specific
+  translations of observed addresses onto listening addresses.
+  [PR 1887](https://github.com/libp2p/rust-libp2p/pull/1887)
+
+- Update dependencies.
+
+# 0.26.0 [2020-12-17]
+
+- Make `PeerId` be `Copy`, including small `PeerId` API changes.
+  [PR 1874](https://github.com/libp2p/rust-libp2p/pull/1874/).
+
+# 0.25.2 [2020-12-02]
+
+- Require `multistream-select-0.9.1`.
+
+# 0.25.1 [2020-11-25]
+
+- Add missing multiaddr upgrade.
+
+# 0.25.0 [2020-11-25]
 
 - The `NetworkConfig` API is now a builder that moves `self`.
   [PR 1848](https://github.com/libp2p/rust-libp2p/pull/1848/).

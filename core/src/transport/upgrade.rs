@@ -334,6 +334,10 @@ where
     fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError<Self::Error>> {
         self.0.listen_on(addr)
     }
+
+    fn address_translation(&self, server: &Multiaddr, observed: &Multiaddr) -> Option<Multiaddr> {
+        self.0.address_translation(server, observed)
+    }
 }
 
 /// An inbound or outbound upgrade.
@@ -367,7 +371,7 @@ where
     type Dial = DialUpgradeFuture<T::Dial, U, C>;
 
     fn dial(self, addr: Multiaddr) -> Result<Self::Dial, TransportError<Self::Error>> {
-        let future = self.inner.dial(addr.clone())
+        let future = self.inner.dial(addr)
             .map_err(|err| err.map(TransportUpgradeError::Transport))?;
         Ok(DialUpgradeFuture {
             future: Box::pin(future),
@@ -382,6 +386,10 @@ where
             stream: Box::pin(stream),
             upgrade: self.upgrade
         })
+    }
+
+    fn address_translation(&self, server: &Multiaddr, observed: &Multiaddr) -> Option<Multiaddr> {
+        self.inner.address_translation(server, observed)
     }
 }
 

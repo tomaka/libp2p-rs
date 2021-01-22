@@ -85,7 +85,7 @@
 //! Example ([`noise`] + [`yamux`] Protocol Upgrade):
 //!
 //! ```rust
-//! # #[cfg(all(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")), feature = "tcp-async-std", feature = "noise", feature = "yamux"))] {
+//! # #[cfg(all(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")), feature = "noise", feature = "yamux"))] {
 //! use libp2p::{Transport, core::upgrade, tcp::TcpConfig, noise, identity::Keypair, yamux};
 //! let tcp = TcpConfig::new();
 //! let id_keys = Keypair::generate_ed25519();
@@ -196,8 +196,8 @@ pub use libp2p_gossipsub as gossipsub;
 #[cfg_attr(docsrs, doc(cfg(feature = "mplex")))]
 #[doc(inline)]
 pub use libp2p_mplex as mplex;
-#[cfg(any(feature = "mdns-async-std", feature = "mdns-tokio"))]
-#[cfg_attr(docsrs, doc(cfg(any(feature = "mdns-async-std", feature = "mdns-tokio"))))]
+#[cfg(feature = "mdns")]
+#[cfg_attr(docsrs, doc(cfg(feature = "mdns")))]
 #[cfg(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")))]
 #[doc(inline)]
 pub use libp2p_mdns as mdns;
@@ -218,8 +218,8 @@ pub use libp2p_plaintext as plaintext;
 pub use libp2p_quic as quic;
 #[doc(inline)]
 pub use libp2p_swarm as swarm;
-#[cfg(any(feature = "tcp-async-std", feature = "tcp-tokio"))]
-#[cfg_attr(docsrs, doc(cfg(any(feature = "tcp-async-std", feature = "tcp-tokio"))))]
+#[cfg(any(feature = "tcp-async-io", feature = "tcp-tokio"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "tcp-async-io", feature = "tcp-tokio"))))]
 #[cfg(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")))]
 #[doc(inline)]
 pub use libp2p_tcp as tcp;
@@ -271,8 +271,8 @@ pub use self::transport_ext::TransportExt;
 ///
 /// > **Note**: This `Transport` is not suitable for production usage, as its implementation
 /// >           reserves the right to support additional protocols or remove deprecated protocols.
-#[cfg(all(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")), any(feature = "tcp-async-std", feature = "tcp-tokio"), feature = "websocket", feature = "noise", feature = "mplex", feature = "yamux"))]
-#[cfg_attr(docsrs, doc(cfg(all(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")), any(feature = "tcp-async-std", feature = "tcp-tokio"), feature = "websocket", feature = "noise", feature = "mplex", feature = "yamux"))))]
+#[cfg(all(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")), any(feature = "tcp-async-io", feature = "tcp-tokio"), feature = "websocket", feature = "noise", feature = "mplex", feature = "yamux"))]
+#[cfg_attr(docsrs, doc(cfg(all(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")), any(feature = "tcp-async-io", feature = "tcp-tokio"), feature = "websocket", feature = "noise", feature = "mplex", feature = "yamux"))))]
 pub fn build_development_transport(keypair: identity::Keypair)
     -> std::io::Result<core::transport::Boxed<(PeerId, core::muxing::StreamMuxerBox)>>
 {
@@ -283,13 +283,13 @@ pub fn build_development_transport(keypair: identity::Keypair)
 ///
 /// The implementation supports TCP/IP, WebSockets over TCP/IP, noise as the encryption layer,
 /// and mplex or yamux as the multiplexing layer.
-#[cfg(all(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")), any(feature = "tcp-async-std", feature = "tcp-tokio"), feature = "websocket", feature = "noise", feature = "mplex", feature = "yamux"))]
-#[cfg_attr(docsrs, doc(cfg(all(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")), any(feature = "tcp-async-std", feature = "tcp-tokio"), feature = "websocket", feature = "noise", feature = "mplex", feature = "yamux"))))]
+#[cfg(all(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")), any(feature = "tcp-async-io", feature = "tcp-tokio"), feature = "websocket", feature = "noise", feature = "mplex", feature = "yamux"))]
+#[cfg_attr(docsrs, doc(cfg(all(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")), any(feature = "tcp-async-io", feature = "tcp-tokio"), feature = "websocket", feature = "noise", feature = "mplex", feature = "yamux"))))]
 pub fn build_tcp_ws_noise_mplex_yamux(keypair: identity::Keypair)
     -> std::io::Result<core::transport::Boxed<(PeerId, core::muxing::StreamMuxerBox)>>
 {
     let transport = {
-        #[cfg(feature = "tcp-async-std")]
+        #[cfg(feature = "tcp-async-io")]
         let tcp = tcp::TcpConfig::new().nodelay(true);
         #[cfg(feature = "tcp-tokio")]
         let tcp = tcp::TokioTcpConfig::new().nodelay(true);
@@ -314,13 +314,13 @@ pub fn build_tcp_ws_noise_mplex_yamux(keypair: identity::Keypair)
 ///
 /// The implementation supports TCP/IP, WebSockets over TCP/IP, noise as the encryption layer,
 /// and mplex or yamux as the multiplexing layer.
-#[cfg(all(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")), any(feature = "tcp-async-std", feature = "tcp-tokio"), feature = "websocket", feature = "noise", feature = "mplex", feature = "yamux", feature = "pnet"))]
-#[cfg_attr(docsrs, doc(cfg(all(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")), any(feature = "tcp-async-std", feature = "tcp-tokio"), feature = "websocket", feature = "noise", feature = "mplex", feature = "yamux", feature = "pnet"))))]
+#[cfg(all(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")), any(feature = "tcp-async-io", feature = "tcp-tokio"), feature = "websocket", feature = "noise", feature = "mplex", feature = "yamux", feature = "pnet"))]
+#[cfg_attr(docsrs, doc(cfg(all(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")), any(feature = "tcp-async-io", feature = "tcp-tokio"), feature = "websocket", feature = "noise", feature = "mplex", feature = "yamux", feature = "pnet"))))]
 pub fn build_tcp_ws_pnet_noise_mplex_yamux(keypair: identity::Keypair, psk: PreSharedKey)
     -> std::io::Result<core::transport::Boxed<(PeerId, core::muxing::StreamMuxerBox)>>
 {
     let transport = {
-        #[cfg(feature = "tcp-async-std")]
+        #[cfg(feature = "tcp-async-io")]
         let tcp = tcp::TcpConfig::new().nodelay(true);
         #[cfg(feature = "tcp-tokio")]
         let tcp = tcp::TokioTcpConfig::new().nodelay(true);

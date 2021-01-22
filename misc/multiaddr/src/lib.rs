@@ -45,6 +45,7 @@ static_assertions::const_assert! {
 }
 
 /// Representation of a Multiaddr.
+#[allow(clippy::rc_buffer)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
 pub struct Multiaddr { bytes: Arc<Vec<u8>> }
 
@@ -62,6 +63,11 @@ impl Multiaddr {
     /// Return the length in bytes of this multiaddress.
     pub fn len(&self) -> usize {
         self.bytes.len()
+    }
+
+    /// Returns true if the length of this multiaddress is 0.
+    pub fn is_empty(&self) -> bool {
+        self.bytes.len() == 0
     }
 
     /// Return a copy of this [`Multiaddr`]'s byte representation.
@@ -314,7 +320,7 @@ impl TryFrom<Vec<u8>> for Multiaddr {
 
 // Create a [`Multiaddr`] from the given IP address and port number.
 #[cfg(not(any(target_os = "emscripten", target_os = "wasi", target_os = "unknown")))]
-fn ip_to_multiaddr(ip: IpAddr, port: u16) -> Multiaddr {
+pub fn ip_to_multiaddr(ip: IpAddr, port: u16) -> Multiaddr {
     let proto = match ip {
         IpAddr::V4(ip) => Protocol::Ip4(ip),
         IpAddr::V6(ip) => Protocol::Ip6(ip)

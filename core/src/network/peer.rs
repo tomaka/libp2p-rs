@@ -197,10 +197,7 @@ where
     ///
     /// Returns `true` iff [`Peer::into_disconnected`] returns `Some`.
     pub fn is_disconnected(&self) -> bool {
-        match self {
-            Peer::Disconnected(..) => true,
-            _ => false
-        }
+        matches!(self, Peer::Disconnected(..))
     }
 
     /// Initiates a new dialing attempt to this peer using the given addresses.
@@ -303,8 +300,8 @@ where
     }
 
     /// Obtains an established connection to the peer by ID.
-    pub fn connection<'b>(&'b mut self, id: ConnectionId)
-        -> Option<EstablishedConnection<'b, TInEvent>>
+    pub fn connection(&mut self, id: ConnectionId)
+        -> Option<EstablishedConnection<TInEvent>>
     {
         self.network.pool.get_established(id)
     }
@@ -334,8 +331,8 @@ where
     }
 
     /// Gets an iterator over all established connections to the peer.
-    pub fn connections<'b>(&'b mut self) ->
-        EstablishedConnectionIter<'b,
+    pub fn connections(&mut self) ->
+        EstablishedConnectionIter<
             impl Iterator<Item = ConnectionId>,
             TInEvent,
             TOutEvent,
@@ -347,8 +344,8 @@ where
     }
 
     /// Obtains some established connection to the peer.
-    pub fn some_connection<'b>(&'b mut self)
-        -> EstablishedConnection<'b, TInEvent>
+    pub fn some_connection(&mut self)
+        -> EstablishedConnection<TInEvent>
     {
         self.connections()
             .into_first()
@@ -435,8 +432,8 @@ where
 
     /// Obtains a dialing attempt to the peer by connection ID of
     /// the current connection attempt.
-    pub fn attempt<'b>(&'b mut self, id: ConnectionId)
-        -> Option<DialingAttempt<'b, TInEvent>>
+    pub fn attempt(&mut self, id: ConnectionId)
+        -> Option<DialingAttempt<'_, TInEvent>>
     {
         if let hash_map::Entry::Occupied(attempts) = self.network.dialing.entry(self.peer_id.clone()) {
             if let Some(pos) = attempts.get().iter().position(|s| s.current.0 == id) {
@@ -449,8 +446,8 @@ where
     }
 
     /// Gets an iterator over all dialing (i.e. pending outgoing) connections to the peer.
-    pub fn attempts<'b>(&'b mut self)
-        -> DialingAttemptIter<'b,
+    pub fn attempts(&mut self)
+        -> DialingAttemptIter<'_,
             TInEvent,
             TOutEvent,
             THandler,
@@ -463,8 +460,8 @@ where
     /// Obtains some dialing connection to the peer.
     ///
     /// At least one dialing connection is guaranteed to exist on a `DialingPeer`.
-    pub fn some_attempt<'b>(&'b mut self)
-        -> DialingAttempt<'b, TInEvent>
+    pub fn some_attempt(&mut self)
+        -> DialingAttempt<'_, TInEvent>
     {
         self.attempts()
             .into_first()
@@ -558,7 +555,7 @@ where
         }
 
         self.network.pool.add(connection, connected)
-            .map(|_id| ConnectedPeer {
+            .map(move |_id| ConnectedPeer {
                 network: self.network,
                 peer_id: self.peer_id,
             })
